@@ -1,8 +1,8 @@
 {
   "name": "maka-desktop",
-  "version": "0.2.0",
-  "description": "Maka Clothing — gestión de inventario, producción y ventas",
-  "main": "main.js",
+  "version": "0.2.1",
+  "description": "Maka Clothing   gestión de inventario, producción y ventas",
+  "main": "src/main/main.js",
   "author": {
     "name": "Maka Clothing",
     "email": "maka.clothingve@gmail.com"
@@ -29,7 +29,6 @@
     "appId": "ve.makaclothing.gestion",
     "productName": "MakaClothing",
     "files": [
-      "main.js",
       "src/**/*",
       "package.json"
     ],
