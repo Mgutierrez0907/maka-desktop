@@ -12,6 +12,18 @@ try {
 let currentUser = null;
 let currentPerfil = null; // { id, nombre, rol }
 
+// Contexto de "venir desde un Pedido" — se usa para prellenar Presupuestos
+// o Ventas cuando se llega ahí con el botón "Armar presupuesto" / "Registrar
+// venta" de la pantalla Pedidos. Se limpia apenas se consume.
+let pedidoParaPresupuesto = null; // { codigo, cliente_id }
+let pedidoParaVenta = null; // { codigo, cliente_id }
+
+const TALLAS_OPCIONES = [
+  { grupo: 'Infantil', valores: ['2', '4', '6', '8', '10', '12', '14', '16'] },
+  { grupo: 'Adulto', valores: ['S', 'M', 'L', 'XL'] },
+];
+const CORTE_OPCIONES = ['Slim fit', 'Clásica', 'Oversize'];
+
 const loginScreen = document.getElementById('login-screen');
 const appScreen = document.getElementById('app-screen');
 const content = document.getElementById('content');
@@ -109,6 +121,7 @@ const views = {
   clientes: viewClientes,
   ventas: viewVentas,
   presupuestos: viewPresupuestos,
+  pedidos: viewPedidos,
   compras: viewCompras,
   config: viewConfig,
 };
@@ -196,12 +209,15 @@ async function viewMateriaPrima() {
       <div class="field">Código<input name="codigo" required placeholder="FR001" /></div>
       <div class="field">Nombre<input name="nombre" required placeholder="Franela blanca" /></div>
       <div class="field">Unidad<input name="unidad" required placeholder="unidad" /></div>
-      <div class="field">Stock<input name="stock" type="number" step="0.0001" value="0" /></div>
-      <div class="field">Costo unitario (USD)<input name="costo_unitario" type="number" step="0.000001" value="0" /></div>
       <div class="field">Categoría<input name="categoria" placeholder="Textil" /></div>
       <button type="submit" id="material-submit-btn">Agregar</button>
       <button type="button" id="material-cancel-btn" style="display:none;background:var(--panel-2);">Cancelar</button>
     </form>
+    <p style="color:var(--muted);font-size:13px;">
+      El stock y el costo unitario no se editan acá — se actualizan solos cada vez que registrás
+      una <strong>Compra</strong> de este material (el costo queda como promedio ponderado). Esta
+      pantalla solo sirve para dar de alta un material nuevo o corregir su nombre/unidad/categoría.
+    </p>
     <div id="material-msg" class="msg"></div>
     ` : ''}
     <table>
@@ -248,8 +264,6 @@ async function viewMateriaPrima() {
       form.elements['codigo'].value = m.codigo;
       form.elements['nombre'].value = m.nombre;
       form.elements['unidad'].value = m.unidad;
-      form.elements['stock'].value = m.stock;
-      form.elements['costo_unitario'].value = m.costo_unitario;
       form.elements['categoria'].value = m.categoria || '';
       form.elements['_editing'].value = codigo;
       codigoInput.disabled = true;
@@ -295,8 +309,6 @@ async function viewMateriaPrima() {
     const payload = Object.fromEntries(fd.entries());
     const editingCodigo = payload._editing;
     delete payload._editing;
-    payload.stock = Number(payload.stock);
-    payload.costo_unitario = Number(payload.costo_unitario);
 
     const msg = document.getElementById('material-msg');
     const query = editingCodigo
@@ -343,6 +355,20 @@ async function viewProductos() {
       <div class="field">Exento
         <select name="es_exento"><option value="false">No</option><option value="true">Sí</option></select>
       </div>
+      <div class="field">Corte
+        <select name="corte">
+          <option value="">(no aplica)</option>
+          ${CORTE_OPCIONES.map((c) => `<option value="${c}">${c}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field">Talla
+        <select name="talla">
+          <option value="">(no aplica)</option>
+          ${TALLAS_OPCIONES.map(
+            (g) => `<optgroup label="${g.grupo}">${g.valores.map((v) => `<option value="${v}">${v}</option>`).join('')}</optgroup>`
+          ).join('')}
+        </select>
+      </div>
       <div class="field">Stock<input name="stock" type="number" step="0.0001" value="0" /></div>
       <div class="field">Categoría<input name="categoria" placeholder="Camisas" /></div>
       <button type="submit" id="producto-submit-btn">Agregar</button>
@@ -351,11 +377,11 @@ async function viewProductos() {
     <div id="producto-msg" class="msg"></div>
     ` : ''}
     <table>
-      <tr><th>Código</th><th>Nombre</th><th>Precio base</th><th>IVA%</th><th>Exento</th><th>Stock</th><th>Estado</th>${isAdmin() ? '<th></th>' : ''}</tr>
+      <tr><th>Código</th><th>Nombre</th><th>Corte</th><th>Talla</th><th>Precio base</th><th>IVA%</th><th>Exento</th><th>Stock</th><th>Estado</th>${isAdmin() ? '<th></th>' : ''}</tr>
       ${(productos || [])
         .map(
           (p) =>
-            `<tr data-codigo="${p.codigo}"><td>${p.codigo}</td><td>${p.nombre}</td><td>${fmt(p.precio_base)}</td><td>${p.porcentaje_iva}</td><td>${p.es_exento ? 'Sí' : 'No'}</td><td>${fmt(p.stock)}</td>
+            `<tr data-codigo="${p.codigo}"><td>${p.codigo}</td><td>${p.nombre}</td><td>${p.corte || '-'}</td><td>${p.talla || '-'}</td><td>${fmt(p.precio_base)}</td><td>${p.porcentaje_iva}</td><td>${p.es_exento ? 'Sí' : 'No'}</td><td>${fmt(p.stock)}</td>
               <td>${p.activo === false ? '<span class="badge" style="color:var(--muted);">Inactivo</span>' : '<span class="badge" style="color:var(--ok);">Activo</span>'}</td>
               ${isAdmin() ? `<td>
                 <span class="badge edit-producto" style="cursor:pointer;">Editar</span>
@@ -415,6 +441,8 @@ async function viewProductos() {
         form.elements['costo'].value = p.costo;
         form.elements['porcentaje_iva'].value = p.porcentaje_iva;
         form.elements['es_exento'].value = String(p.es_exento);
+        form.elements['corte'].value = p.corte || '';
+        form.elements['talla'].value = p.talla || '';
         form.elements['stock'].value = p.stock;
         form.elements['categoria'].value = p.categoria || '';
         form.elements['_editing'].value = codigo;
@@ -467,6 +495,8 @@ async function viewProductos() {
       payload.es_exento = payload.es_exento === 'true';
       payload.stock = Number(payload.stock);
       if (!payload.diseno_id) delete payload.diseno_id;
+      if (!payload.corte) delete payload.corte;
+      if (!payload.talla) delete payload.talla;
 
       const msg = document.getElementById('producto-msg');
       const query = editingCodigo
@@ -563,11 +593,6 @@ async function renderReceta(productoCodigo, materiales) {
 // ============================================================
 
 async function viewDisenos() {
-  if (!isAdmin()) {
-    content.innerHTML = '<p>No tenés acceso a esta sección.</p>';
-    return;
-  }
-
   const { data: disenos } = await supabase.from('disenos').select('*').order('id');
 
   content.innerHTML = `
@@ -597,7 +622,7 @@ async function viewDisenos() {
                 <span class="badge edit-diseno" style="cursor:pointer;">Editar</span>
                 ${d.activo === false
                   ? `<span class="badge activar-diseno" style="cursor:pointer;color:var(--ok);">Reactivar</span>`
-                  : `<span class="badge delete-diseno" style="cursor:pointer;color:var(--err);">Eliminar</span>`}
+                  : (isAdmin() ? `<span class="badge delete-diseno" style="cursor:pointer;color:var(--err);">Eliminar</span>` : '')}
               </td>
             </tr>`
         )
@@ -832,11 +857,16 @@ async function viewVentas() {
     return clientes.map((c) => `<option value="${c.id}">${c.id} — ${c.nombre}</option>`).join('');
   }
 
+  const contexto = pedidoParaVenta;
+  pedidoParaVenta = null; // se consume una sola vez
+
   content.innerHTML = `
     <h2>Ventas</h2>
+    ${contexto ? `<div class="msg ok">Registrando la venta final del pedido <strong>${contexto.codigo}</strong>.</div>` : ''}
     <div class="card">
       <h3>Nueva venta</h3>
       <form id="form-venta">
+        <input type="hidden" name="pedido_id" value="${contexto ? contexto.codigo : ''}" />
         <div class="inline-form">
           <div class="field">Cliente
             <select name="cliente_id" id="venta-cliente-select" required>
@@ -903,10 +933,15 @@ async function viewVentas() {
         <tr><th>Factura</th><th>Fecha</th><th>Cliente</th><th>Total</th><th>Moneda</th><th>Método</th><th></th></tr>
         ${(ventas || [])
           .map(
-            (v) =>
-              `<tr><td>#${v.numero_factura}</td><td>${v.fecha}</td><td>${v.cliente_id || '-'}</td><td>${fmt(v.gran_total)}</td><td>${v.moneda_pago}</td><td>${v.metodo_pago}</td>
-                <td><span class="badge imprimir-nota" data-id="${v.id}" style="cursor:pointer;">Nota de entrega</span></td>
-              </tr>`
+            (v) => `
+              <tr data-venta-id="${v.id}">
+                <td>#${v.numero_factura}</td><td>${v.fecha}</td><td>${v.cliente_id || '-'}</td><td>${fmt(v.gran_total)}</td><td>${v.moneda_pago}</td><td>${v.metodo_pago}</td>
+                <td>
+                  <span class="badge imprimir-nota" data-id="${v.id}" style="cursor:pointer;">Nota de entrega</span>
+                  <span class="badge toggle-pagos-venta" data-id="${v.id}" style="cursor:pointer;">Pagos</span>
+                </td>
+              </tr>
+              <tr class="pagos-venta-row" data-venta-pagos="${v.id}" style="display:none;"><td colspan="7"></td></tr>`
           )
           .join('')}
       </table>
@@ -1021,9 +1056,29 @@ async function viewVentas() {
   document.getElementById('venta-descuento-input').addEventListener('input', recalcularResumen);
   recalcularResumen();
 
+  if (contexto && contexto.cliente_id) {
+    document.getElementById('venta-cliente-select').value = contexto.cliente_id;
+  }
+
   // ---- nota de entrega ----
   content.querySelectorAll('.imprimir-nota').forEach((el) => {
     el.addEventListener('click', () => imprimirNotaEntrega(Number(el.dataset.id)));
+  });
+
+  // ---- pagos de una venta (expandir/colapsar) ----
+  content.querySelectorAll('.toggle-pagos-venta').forEach((el) => {
+    el.addEventListener('click', async () => {
+      const ventaId = Number(el.dataset.id);
+      const row = content.querySelector(`tr[data-venta-pagos="${ventaId}"]`);
+      const abierto = row.style.display !== 'none';
+      if (abierto) {
+        row.style.display = 'none';
+        row.querySelector('td').innerHTML = '';
+      } else {
+        row.style.display = '';
+        await renderPagosPanel(row.querySelector('td'), { venta_id: ventaId });
+      }
+    });
   });
 
   // ---- registrar venta ----
@@ -1052,6 +1107,7 @@ async function viewVentas() {
       p_metodo_pago: fd.get('metodo_pago'),
       p_tasa_cambio: Number(fd.get('tasa_cambio')),
       p_descuento_manual: Number(fd.get('descuento_manual') || 0),
+      p_pedido_id: fd.get('pedido_id') || null,
     });
 
     if (error) {
@@ -1181,7 +1237,7 @@ async function viewPresupuestos() {
   const { data: config } = await supabase.from('config_global').select('*').single();
   const { data: presupuestos } = await supabase
     .from('presupuestos')
-    .select('id,fecha,cliente_id,total_estimado,moneda,estado')
+    .select('id,fecha,cliente_id,total_estimado,moneda,estado,pedido_id')
     .order('fecha', { ascending: false })
     .limit(15);
 
@@ -1189,11 +1245,16 @@ async function viewPresupuestos() {
     return clientes.map((c) => `<option value="${c.id}">${c.id} — ${c.nombre}</option>`).join('');
   }
 
+  const contexto = pedidoParaPresupuesto;
+  pedidoParaPresupuesto = null; // se consume una sola vez
+
   content.innerHTML = `
     <h2>Presupuestos</h2>
+    ${contexto ? `<div class="msg ok">Armando presupuesto para el pedido <strong>${contexto.codigo}</strong>.</div>` : ''}
     <div class="card">
       <h3>Nuevo presupuesto</h3>
       <form id="form-presupuesto">
+        <input type="hidden" name="pedido_id" value="${contexto ? contexto.codigo : ''}" />
         <div class="inline-form">
           <div class="field">Cliente
             <select name="cliente_id" id="presu-cliente-select">
@@ -1247,16 +1308,17 @@ async function viewPresupuestos() {
     <div class="card">
       <h3>Últimos presupuestos</h3>
       <table>
-        <tr><th>Fecha</th><th>Cliente</th><th>Total</th><th>Moneda</th><th>Estado</th><th></th></tr>
+        <tr><th>Fecha</th><th>Cliente</th><th>Pedido</th><th>Total</th><th>Moneda</th><th>Estado</th><th></th></tr>
         ${(presupuestos || [])
           .map(
             (p) => `<tr data-id="${p.id}">
-              <td>${p.fecha}</td><td>${p.cliente_id || '-'}</td><td>${fmt(p.total_estimado)}</td><td>${p.moneda}</td>
+              <td>${p.fecha}</td><td>${p.cliente_id || '-'}</td><td>${p.pedido_id || '-'}</td><td>${fmt(p.total_estimado)}</td><td>${p.moneda}</td>
               <td>
                 <select class="presu-estado-select" data-id="${p.id}">
                   <option value="pendiente" ${p.estado === 'pendiente' ? 'selected' : ''}>Pendiente</option>
                   <option value="aceptado" ${p.estado === 'aceptado' ? 'selected' : ''}>Aceptado</option>
                   <option value="rechazado" ${p.estado === 'rechazado' ? 'selected' : ''}>Rechazado</option>
+                  <option value="ajustado" ${p.estado === 'ajustado' ? 'selected' : ''}>Ajustado</option>
                 </select>
               </td>
               <td><span class="badge imprimir-presupuesto" data-id="${p.id}" style="cursor:pointer;">Imprimir</span></td>
@@ -1369,6 +1431,10 @@ async function viewPresupuestos() {
   document.getElementById('presu-tasa-input').addEventListener('input', recalcular);
   recalcular();
 
+  if (contexto && contexto.cliente_id) {
+    document.getElementById('presu-cliente-select').value = contexto.cliente_id;
+  }
+
   // ---- estado ----
   content.querySelectorAll('.presu-estado-select').forEach((sel) => {
     sel.addEventListener('change', async () => {
@@ -1419,6 +1485,7 @@ async function viewPresupuestos() {
       total_estimado: total,
       moneda: fd.get('moneda'),
       tasa_bcv_aplicada: Number(fd.get('tasa_bcv_aplicada')),
+      pedido_id: fd.get('pedido_id') || null,
     });
 
     if (error) {
@@ -1511,6 +1578,279 @@ async function imprimirPresupuesto(presupuestoId) {
   const win = window.open('', '_blank', 'width=700,height=900');
   win.document.write(html);
   win.document.close();
+}
+
+// ============================================================
+// Pagos (panel compartido — se usa dentro de Ventas y de Pedidos)
+// ============================================================
+
+async function renderPagosPanel(container, { venta_id = null, pedido_codigo = null } = {}, totalReferencia = null) {
+  const filtro = venta_id ? { venta_id } : { pedido_codigo };
+  let query = supabase.from('pagos').select('*').order('fecha', { ascending: false });
+  query = venta_id ? query.eq('venta_id', venta_id) : query.eq('pedido_codigo', pedido_codigo);
+  const { data: pagos } = await query;
+
+  const totalPagado = (pagos || []).reduce((acc, p) => acc + Number(p.monto), 0);
+  const saldoHtml =
+    totalReferencia != null
+      ? `<div style="font-size:13px;margin-top:6px;">Total: <strong>${fmt(totalReferencia)}</strong> · Pagado: <strong>${fmt(totalPagado)}</strong> · Saldo: <strong style="color:${totalReferencia - totalPagado > 0.009 ? 'var(--err)' : 'var(--ok)'};">${fmt(totalReferencia - totalPagado)}</strong></div>`
+      : `<div style="font-size:13px;margin-top:6px;">Pagado hasta ahora: <strong>${fmt(totalPagado)}</strong></div>`;
+
+  container.innerHTML = `
+    <div class="card" style="margin:8px 0;">
+      <h3 style="margin-top:0;">Pagos</h3>
+      <table>
+        <tr><th>Fecha</th><th>Tipo</th><th>Monto</th><th>Moneda</th><th>Tasa aplicada</th><th>Referencia</th></tr>
+        ${(pagos || [])
+          .map(
+            (p) =>
+              `<tr><td>${p.fecha}</td><td>${p.tipo_pago}</td><td>${fmt(p.monto)}</td><td>${p.moneda}</td><td>${p.tasa_cambio_bcv_aplicada ? fmt(p.tasa_cambio_bcv_aplicada) : '-'}</td><td>${p.referencia || '-'}</td></tr>`
+          )
+          .join('') || '<tr><td colspan="6" style="color:var(--muted);">Sin pagos registrados todavía.</td></tr>'}
+      </table>
+      ${saldoHtml}
+      <form class="inline-form" id="form-pago" style="margin-top:10px;">
+        <div class="field">Tipo de pago
+          <select name="tipo_pago">
+            <option>Efectivo</option><option>Transferencia</option>
+            <option>Tarjeta de Débito</option><option>Pago Móvil</option>
+            <option>Moneda Extranjera</option>
+          </select>
+        </div>
+        <div class="field">Monto<input name="monto" type="number" step="0.000001" required /></div>
+        <div class="field">Moneda
+          <select name="moneda"><option value="USD">USD</option><option value="VES">VES</option></select>
+        </div>
+        <div class="field">Tasa BCV aplicada<input name="tasa_cambio_bcv_aplicada" type="number" step="0.0001" /></div>
+        <div class="field">Referencia<input name="referencia" placeholder="Nº de referencia (opcional)" /></div>
+        <button type="submit">Agregar pago</button>
+      </form>
+      <div id="pago-msg" class="msg"></div>
+    </div>
+  `;
+
+  container.querySelector('#form-pago').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const msg = container.querySelector('#pago-msg');
+    const payload = {
+      tipo_pago: fd.get('tipo_pago'),
+      monto: Number(fd.get('monto')),
+      moneda: fd.get('moneda'),
+      tasa_cambio_bcv_aplicada: fd.get('tasa_cambio_bcv_aplicada') ? Number(fd.get('tasa_cambio_bcv_aplicada')) : null,
+      referencia: fd.get('referencia') || null,
+      ...(venta_id ? { venta_id } : { pedido_codigo }),
+    };
+    const { error } = await supabase.from('pagos').insert(payload);
+    if (error) {
+      msg.className = 'msg err';
+      msg.textContent = error.message;
+    } else {
+      renderPagosPanel(container, { venta_id, pedido_codigo }, totalReferencia);
+    }
+  });
+}
+
+// ============================================================
+// Pedidos — ciclo completo: pedido -> presupuesto -> venta
+// ============================================================
+
+async function viewPedidos() {
+  let clientes = (await supabase.from('clientes').select('id,nombre')).data || [];
+  const { data: pedidos } = await supabase
+    .from('pedidos')
+    .select('codigo,fecha,cliente_id,estado,presupuesto_id,venta_id,notas')
+    .order('fecha', { ascending: false })
+    .limit(30);
+
+  const presupuestoIds = (pedidos || []).map((p) => p.presupuesto_id).filter(Boolean);
+  const ventaIds = (pedidos || []).map((p) => p.venta_id).filter(Boolean);
+  const { data: presupuestosInfo } = presupuestoIds.length
+    ? await supabase.from('presupuestos').select('id,total_estimado,moneda').in('id', presupuestoIds)
+    : { data: [] };
+  const { data: ventasInfo } = ventaIds.length
+    ? await supabase.from('ventas').select('id,numero_factura,gran_total,moneda_pago').in('id', ventaIds)
+    : { data: [] };
+
+  function clienteOptions() {
+    return clientes.map((c) => `<option value="${c.id}">${c.id} — ${c.nombre}</option>`).join('');
+  }
+
+  const ESTADO_LABEL = {
+    pendiente: 'Pendiente de presupuesto',
+    presupuestado: 'Presupuestado',
+    aprobado: 'Aprobado',
+    rechazado: 'Rechazado',
+    ajustado: 'Ajustado',
+    completado: 'Completado (vendido)',
+  };
+  const ESTADO_COLOR = {
+    pendiente: 'var(--muted)',
+    presupuestado: '#c9a227',
+    aprobado: 'var(--ok)',
+    rechazado: 'var(--err)',
+    ajustado: '#c9a227',
+    completado: 'var(--ok)',
+  };
+
+  content.innerHTML = `
+    <h2>Pedidos</h2>
+    <p style="color:var(--muted);font-size:13px;">
+      Un pedido agrupa todo el ciclo: se crea, se arma un presupuesto (que puede quedar pendiente,
+      aprobado, rechazado o ajustado) y cuando se aprueba se convierte en la venta final.
+    </p>
+
+    <div class="card">
+      <h3>Nuevo pedido</h3>
+      <form class="inline-form" id="form-pedido">
+        <div class="field">Cliente
+          <select name="cliente_id" id="pedido-cliente-select" required>
+            <option value="">Elegí...</option>
+            ${clienteOptions()}
+          </select>
+        </div>
+        <button type="button" id="pedido-toggle-nuevo-cliente" class="badge" style="cursor:pointer;align-self:flex-end;height:34px;">+ Cliente nuevo</button>
+        <div class="field">Notas<input name="notas" placeholder="Ej: franela personalizada, talla M..." style="width:260px" /></div>
+        <button type="submit">Crear pedido</button>
+      </form>
+      <div id="pedido-nuevo-cliente-box" class="card" style="display:none;">
+        <div class="inline-form" style="margin-bottom:0;">
+          <div class="field">Tipo
+            <select id="pedido-nc-tipo">
+              <option value="V">V</option><option value="E">E</option><option value="J">J</option>
+              <option value="G">G</option><option value="P">P</option><option value="C">C</option>
+            </select>
+          </div>
+          <div class="field">Número doc.<input id="pedido-nc-numero" placeholder="12345678" /></div>
+          <div class="field">Nombre<input id="pedido-nc-nombre" /></div>
+          <div class="field">Dirección fiscal<input id="pedido-nc-direccion" placeholder="mín. 15 caracteres" style="width:200px" /></div>
+          <div class="field">Teléfono<input id="pedido-nc-telefono" /></div>
+          <button type="button" id="pedido-nc-guardar">Guardar cliente</button>
+        </div>
+        <div id="pedido-nc-msg" class="msg"></div>
+      </div>
+      <div id="pedido-msg" class="msg"></div>
+    </div>
+
+    <table>
+      <tr><th>Pedido</th><th>Fecha</th><th>Cliente</th><th>Estado</th><th>Presupuesto</th><th>Venta</th><th>Notas</th><th></th></tr>
+      ${(pedidos || [])
+        .map((p) => {
+          const presu = (presupuestosInfo || []).find((x) => x.id === p.presupuesto_id);
+          const venta = (ventasInfo || []).find((x) => x.id === p.venta_id);
+          const puedeArmarPresupuesto = ['pendiente', 'ajustado', 'rechazado'].includes(p.estado);
+          const puedeRegistrarVenta = p.estado === 'aprobado';
+          return `
+            <tr data-codigo="${p.codigo}">
+              <td>${p.codigo}</td>
+              <td>${p.fecha}</td>
+              <td>${p.cliente_id || '-'}</td>
+              <td><span class="badge" style="color:${ESTADO_COLOR[p.estado] || 'var(--muted)'};">${ESTADO_LABEL[p.estado] || p.estado}</span></td>
+              <td>${presu ? `${fmt(presu.total_estimado)} ${presu.moneda}` : '-'}</td>
+              <td>${venta ? `#${venta.numero_factura} (${fmt(venta.gran_total)} ${venta.moneda_pago})` : '-'}</td>
+              <td style="max-width:160px;">${p.notas || '-'}</td>
+              <td>
+                ${puedeArmarPresupuesto ? `<span class="badge armar-presupuesto" data-codigo="${p.codigo}" data-cliente="${p.cliente_id || ''}" style="cursor:pointer;">Armar presupuesto</span>` : ''}
+                ${puedeRegistrarVenta ? `<span class="badge registrar-venta-pedido" data-codigo="${p.codigo}" data-cliente="${p.cliente_id || ''}" style="cursor:pointer;color:var(--ok);">Registrar venta</span>` : ''}
+                <span class="badge toggle-pagos-pedido" data-codigo="${p.codigo}" data-total="${presu ? presu.total_estimado : ''}" style="cursor:pointer;">Pagos</span>
+              </td>
+            </tr>
+            <tr class="pagos-pedido-row" data-pedido-pagos="${p.codigo}" style="display:none;"><td colspan="8"></td></tr>`;
+        })
+        .join('')}
+    </table>
+  `;
+
+  // ---- cliente nuevo ----
+  const ncBox = document.getElementById('pedido-nuevo-cliente-box');
+  document.getElementById('pedido-toggle-nuevo-cliente').addEventListener('click', () => {
+    ncBox.style.display = ncBox.style.display === 'none' ? 'block' : 'none';
+  });
+
+  document.getElementById('pedido-nc-guardar').addEventListener('click', async () => {
+    const payload = {
+      tipo_documento: document.getElementById('pedido-nc-tipo').value,
+      numero_documento: document.getElementById('pedido-nc-numero').value.trim(),
+      nombre: document.getElementById('pedido-nc-nombre').value.trim(),
+      direccion_fiscal: document.getElementById('pedido-nc-direccion').value.trim(),
+      telefono: document.getElementById('pedido-nc-telefono').value.trim(),
+    };
+    const ncMsg = document.getElementById('pedido-nc-msg');
+    if (!payload.numero_documento || !payload.nombre) {
+      ncMsg.className = 'msg err';
+      ncMsg.textContent = 'Completá al menos número de documento y nombre.';
+      return;
+    }
+    if (payload.direccion_fiscal.length < 15) {
+      ncMsg.className = 'msg err';
+      ncMsg.textContent = 'La dirección fiscal debe tener al menos 15 caracteres.';
+      return;
+    }
+    const { data, error } = await supabase.from('clientes').insert(payload).select().single();
+    if (error) {
+      ncMsg.className = 'msg err';
+      ncMsg.textContent = error.message;
+    } else {
+      clientes.push({ id: data.id, nombre: data.nombre });
+      const sel = document.getElementById('pedido-cliente-select');
+      sel.innerHTML = '<option value="">Elegí...</option>' + clienteOptions();
+      sel.value = data.id;
+      ncMsg.className = 'msg ok';
+      ncMsg.textContent = `Cliente ${data.id} creado y seleccionado.`;
+    }
+  });
+
+  // ---- crear pedido ----
+  document.getElementById('form-pedido').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const msg = document.getElementById('pedido-msg');
+    const { error } = await supabase.from('pedidos').insert({
+      cliente_id: fd.get('cliente_id') || null,
+      notas: fd.get('notas') || null,
+    });
+    if (error) {
+      msg.className = 'msg err';
+      msg.textContent = error.message;
+    } else {
+      msg.className = 'msg ok';
+      msg.textContent = 'Pedido creado.';
+      goToView('pedidos');
+    }
+  });
+
+  // ---- ir a armar presupuesto ----
+  content.querySelectorAll('.armar-presupuesto').forEach((el) => {
+    el.addEventListener('click', () => {
+      pedidoParaPresupuesto = { codigo: el.dataset.codigo, cliente_id: el.dataset.cliente || null };
+      goToView('presupuestos');
+    });
+  });
+
+  // ---- ir a registrar venta ----
+  content.querySelectorAll('.registrar-venta-pedido').forEach((el) => {
+    el.addEventListener('click', () => {
+      pedidoParaVenta = { codigo: el.dataset.codigo, cliente_id: el.dataset.cliente || null };
+      goToView('ventas');
+    });
+  });
+
+  // ---- pagos del pedido (expandir/colapsar) ----
+  content.querySelectorAll('.toggle-pagos-pedido').forEach((el) => {
+    el.addEventListener('click', async () => {
+      const codigo = el.dataset.codigo;
+      const total = el.dataset.total ? Number(el.dataset.total) : null;
+      const row = content.querySelector(`tr[data-pedido-pagos="${codigo}"]`);
+      const abierto = row.style.display !== 'none';
+      if (abierto) {
+        row.style.display = 'none';
+        row.querySelector('td').innerHTML = '';
+      } else {
+        row.style.display = '';
+        await renderPagosPanel(row.querySelector('td'), { pedido_codigo: codigo }, total);
+      }
+    });
+  });
 }
 
 // ============================================================
@@ -1675,6 +2015,21 @@ async function viewConfig() {
         igual guarda su propia tasa aplicada, así que cambiar esto no afecta ventas pasadas.
       </p>
     </div>
+
+    <div class="card" style="border:1px solid var(--err);">
+      <h3 style="color:var(--err);">Vaciar el sistema</h3>
+      <p style="color:var(--muted);font-size:13px;">
+        Borra <strong>todo</strong> lo cargado — materia prima, productos, diseños, clientes,
+        compras, ventas, producción, pedidos, presupuestos y pagos — para arrancar en limpio antes
+        de usar el sistema en producción. No borra las cuentas de acceso (tu usuario y el de
+        María). <strong>Esta acción no se puede deshacer.</strong>
+      </p>
+      <div class="inline-form">
+        <div class="field">Escribí BORRAR TODO para confirmar<input id="reset-confirm-input" placeholder="BORRAR TODO" style="width:200px" /></div>
+        <button type="button" id="reset-sistema-btn" style="background:var(--err);">Vaciar el sistema</button>
+      </div>
+      <div id="reset-msg" class="msg"></div>
+    </div>
   `;
 
   document.getElementById('form-config').addEventListener('submit', async (e) => {
@@ -1689,6 +2044,29 @@ async function viewConfig() {
     } else {
       msg.className = 'msg ok';
       msg.textContent = 'Tasa actualizada.';
+    }
+  });
+
+  document.getElementById('reset-sistema-btn').addEventListener('click', async () => {
+    const input = document.getElementById('reset-confirm-input');
+    const msg = document.getElementById('reset-msg');
+    if (input.value.trim().toUpperCase() !== 'BORRAR TODO') {
+      msg.className = 'msg err';
+      msg.textContent = 'Escribí exactamente BORRAR TODO para confirmar.';
+      return;
+    }
+    if (!confirm('Esto borra absolutamente todo lo cargado en el sistema y no se puede deshacer. ¿Confirmás?')) {
+      return;
+    }
+    const { error } = await supabase.rpc('resetear_sistema');
+    if (error) {
+      msg.className = 'msg err';
+      msg.textContent = error.message;
+    } else {
+      msg.className = 'msg ok';
+      msg.textContent = 'Sistema vaciado. Ya podés empezar a cargar los datos reales.';
+      input.value = '';
+      goToView('resumen');
     }
   });
 }

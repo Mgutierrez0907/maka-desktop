@@ -10,7 +10,7 @@
   "homepage": "https://instagram.com/maka.clothing.ve",
   "repository": {
     "type": "git",
-    "url": "https://github.com/TU_USUARIO_DE_GITHUB/maka-desktop.git"
+    "url": "https://github.com/mgutierrez0907/maka-desktop.git"
   },
   "scripts": {
     "start": "electron . --no-sandbox",
@@ -48,7 +48,7 @@
     },
     "publish": {
       "provider": "github",
-      "owner": "TU_USUARIO_DE_GITHUB",
+      "owner": "mgutierrez0907",
       "repo": "maka-desktop"
     }
   }

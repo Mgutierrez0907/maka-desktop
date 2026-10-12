@@ -7,8 +7,10 @@ Corre igual en Ubuntu y en Windows.
 
 1. Corré en el SQL Editor de Supabase, en este orden: `maka_schema.sql`,
    `maka_schema_funciones.sql`, `maka_schema_compras.sql`,
-   `maka_schema_activo.sql`, el fix de la columna de compras, y
-   `maka_schema_costo_ponderado.sql`.
+   `maka_schema_activo.sql`, el fix de la columna de compras,
+   `maka_schema_costo_ponderado.sql`, y por último `maka_schema_v2.sql`
+   (corte/talla en productos, acceso de ventas a Diseños, Pedidos, Pagos
+   y el reset total del sistema).
 2. Confirmá que tu usuario y el de María ya tienen fila en `perfiles` con
    su `rol` (`admin` / `ventas`).
 
@@ -101,25 +103,41 @@ repositorio) → bajar hasta **Danger Zone** → **Change visibility** →
 - Login contra Supabase Auth, con el rol (admin/ventas) leído de la tabla
   `perfiles` — el menú lateral se ajusta solo según el rol.
 - **Resumen**: stock de productos, cuáles están bajos, últimas ventas.
-- **Materia prima** / **Productos**: alta, edición y baja (desactivar en
-  vez de borrar si ya tienen historial).
-- **Diseños**: catálogo opcional (DTF u otros) para enlazar a productos.
+- **Materia prima**: solo lectura de stock y costo — el alta es solo para
+  dar de alta un material nuevo (código/nombre/unidad/categoría). El
+  stock y el costo unitario (promedio ponderado) se actualizan únicamente
+  desde **Compras**, nunca a mano.
+- **Productos**: alta, edición y baja (desactivar en vez de borrar si ya
+  tienen historial), con corte (Slim fit / Clásica / Oversize) y talla
+  (infantil 2–16, adulto S–XL) para camisas.
+- **Diseños**: catálogo (DTF u otros) para enlazar a productos — visible y
+  editable tanto por admin como por ventas (eliminar sigue siendo solo
+  admin).
 - **Producción**: arma un producto desde su receta, descontando materia
   prima automáticamente.
 - **Clientes**: alta (con validación de dirección fiscal), también desde
-  Ventas y Presupuestos sin cambiar de pantalla.
+  Ventas, Presupuestos y Pedidos sin cambiar de pantalla.
 - **Ventas**: calcula IVA/exento, muestra el total en Bs en vivo, descuenta
-  stock automáticamente, e imprime una nota de entrega con el logo.
+  stock automáticamente, imprime una nota de entrega con el logo, y
+  permite registrar los pagos/abonos de cada venta (botón "Pagos").
 - **Presupuestos**: arma un presupuesto (sin descontar stock), con estado
-  pendiente/aceptado/rechazado, e imprime una nota con el logo.
+  pendiente/aceptado/rechazado/ajustado, se puede enlazar a un Pedido, e
+  imprime una nota con el logo.
+- **Pedidos**: agrupa el ciclo completo — se crea el pedido, se arma su
+  presupuesto desde ahí mismo (botón "Armar presupuesto"), y cuando el
+  presupuesto queda aceptado el pedido pasa a "Aprobado" y habilita
+  "Registrar venta" para cerrarlo. Cada pedido también tiene su propio
+  registro de pagos/abonos (útil para el 50% inicial de los pedidos
+  personalizados).
 - **Compras**: suma el stock de materia prima y recalcula el costo
   unitario como promedio ponderado.
+- **Configuración**: tasa BCV, y un botón para **vaciar todo el sistema**
+  (catálogos incluidos) antes de pasar a producción — pide escribir
+  "BORRAR TODO" para confirmar, y no toca las cuentas de acceso.
 - **Compras** y **Configuración**: solo visibles para admin.
 
 ## Lo que falta pulir (para la próxima vuelta)
 
-- Editar/eliminar en Presupuestos y Compras ya existe; falta en Diseños
-  nada más avanzado que activar/desactivar.
 - Mandar la nota de entrega / presupuesto directo por WhatsApp (hoy se
   imprime o se guarda como PDF manualmente desde ahí).
 - Ícono propio para el instalador en vez del logo genérico (ya está
