@@ -1,0 +1,55 @@
+{
+  "name": "maka-desktop",
+  "version": "0.1.0",
+  "description": "Maka Clothing — gestión de inventario, producción y ventas",
+  "main": "main.js",
+  "author": {
+    "name": "Maka Clothing",
+    "email": "maka.clothingve@gmail.com"
+  },
+  "homepage": "https://instagram.com/maka.clothing.ve",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Mgutierrez0907/maka-desktop.git"
+  },
+  "scripts": {
+    "start": "electron . --no-sandbox",
+    "dist": "electron-builder",
+    "publish": "electron-builder --publish always"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
+    "electron-updater": "^6.3.9"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "ve.makaclothing.gestion",
+    "productName": "MakaClothing",
+    "files": [
+      "main.js",
+      "src/**/*",
+      "package.json"
+    ],
+    "icon": "src/assets/logo.png",
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "category": "Office",
+      "maintainer": "Maka Clothing <maka.clothingve@gmail.com>"
+    },
+    "win": {
+      "target": ["nsis"]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "Mgutierrez0907",
+      "repo": "maka-desktop"
+    }
+  }
+}

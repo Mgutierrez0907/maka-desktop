@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Maka Clothing — Gestión</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- ---------- LOGIN ---------- -->
+  <div id="login-screen">
+    <div id="login-box">
+      <h1>Maka Clothing</h1>
+      <p class="sub">Gestión administrativa</p>
+      <input id="login-email" type="email" placeholder="Correo" />
+      <input id="login-password" type="password" placeholder="Contraseña" />
+      <button id="login-btn">Entrar</button>
+      <div id="login-error"></div>
+    </div>
+  </div>
+
+  <!-- ---------- APP ---------- -->
+  <div id="app-screen">
+    <div id="sidebar">
+      <div class="brand">
+        Maka Clothing
+        <span id="user-role-label"></span>
+      </div>
+      <div class="nav-item" data-view="resumen">Resumen</div>
+      <div class="nav-item" data-view="materiaPrima">Materia prima</div>
+      <div class="nav-item" data-view="productos">Productos</div>
+      <div class="nav-item" data-view="disenos" data-admin-only="1">Diseños</div>
+      <div class="nav-item" data-view="produccion">Producción</div>
+      <div class="nav-item" data-view="clientes">Clientes</div>
+      <div class="nav-item" data-view="ventas">Ventas</div>
+      <div class="nav-item" data-view="presupuestos">Presupuestos</div>
+      <div class="nav-item" data-view="compras" data-admin-only="1">Compras</div>
+      <div class="nav-item" data-view="config" data-admin-only="1">Configuración</div>
+      <div class="bottom">
+        <div id="user-email-label"></div>
+        <button id="logout-btn">Cerrar sesión</button>
+      </div>
+    </div>
+    <div id="content"></div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
