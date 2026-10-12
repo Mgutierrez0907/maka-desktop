@@ -1,6 +1,6 @@
 {
   "name": "maka-desktop",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "description": "Maka Clothing — gestión de inventario, producción y ventas",
   "main": "main.js",
   "author": {
@@ -56,7 +56,7 @@
       "provider": "github",
       "owner": "mgutierrez0907",
       "repo": "maka-desktop",
-      "draft": false
+      "releaseType": "release"
     }
   }
 }
