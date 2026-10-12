@@ -1,8 +1,8 @@
 {
   "name": "maka-desktop",
   "version": "0.1.0",
-  "description": "Maka Clothing - gestión de inventario, producción y ventas",
-  "main": "src/main/main.js",
+  "description": "Maka Clothing — gestión de inventario, producción y ventas",
+  "main": "main.js",
   "author": {
     "name": "Maka Clothing",
     "email": "maka.clothingve@gmail.com"
@@ -10,7 +10,7 @@
   "homepage": "https://instagram.com/maka.clothing.ve",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Mgutierrez0907/maka-desktop.git"
+    "url": "https://github.com/TU_USUARIO_DE_GITHUB/maka-desktop.git"
   },
   "scripts": {
     "start": "electron . --no-sandbox",
@@ -29,22 +29,18 @@
     "appId": "ve.makaclothing.gestion",
     "productName": "MakaClothing",
     "files": [
+      "main.js",
       "src/**/*",
       "package.json"
     ],
     "icon": "src/assets/logo.png",
     "linux": {
-      "target": [
-        "AppImage",
-        "deb"
-      ],
+      "target": ["AppImage", "deb"],
       "category": "Office",
       "maintainer": "Maka Clothing <maka.clothingve@gmail.com>"
     },
     "win": {
-      "target": [
-        "nsis"
-      ]
+      "target": ["nsis"]
     },
     "nsis": {
       "oneClick": false,
@@ -52,7 +48,7 @@
     },
     "publish": {
       "provider": "github",
-      "owner": "Mgutierrez0907",
+      "owner": "TU_USUARIO_DE_GITHUB",
       "repo": "maka-desktop"
     }
   }
