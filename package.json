@@ -1,6 +1,6 @@
 {
   "name": "maka-desktop",
-  "version": "0.2.1",
+  "version": "0.2.4",
   "description": "Maka Clothing   gestión de inventario, producción y ventas",
   "main": "src/main/main.js",
   "author": {
@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
+    "electron-store": "^11.0.2",
     "electron-updater": "^6.3.9"
   },
   "devDependencies": {
@@ -34,12 +35,17 @@
     ],
     "icon": "src/assets/logo.png",
     "linux": {
-      "target": ["AppImage", "deb"],
+      "target": [
+        "AppImage",
+        "deb"
+      ],
       "category": "Office",
       "maintainer": "Maka Clothing <maka.clothingve@gmail.com>"
     },
     "win": {
-      "target": ["nsis"]
+      "target": [
+        "nsis"
+      ]
     },
     "nsis": {
       "oneClick": false,
