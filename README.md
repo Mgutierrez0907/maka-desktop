@@ -136,6 +136,43 @@ repositorio) → bajar hasta **Danger Zone** → **Change visibility** →
   "BORRAR TODO" para confirmar, y no toca las cuentas de acceso.
 - **Compras** y **Configuración**: solo visibles para admin.
 
+## Versión web (alternativa al instalador, para cuando no hay laptop a mano)
+
+Además de la app de escritorio, el proyecto incluye una versión web en la
+carpeta `docs/` — misma pantalla, mismo Supabase, mismo login y los mismos
+roles (admin/ventas). No reemplaza al instalador, es una alternativa: sirve
+para registrar una venta o un pago desde el celular en caso de no tener a
+mano ni tu laptop ni la PC de María.
+
+**Cómo publicarla (gratis, con GitHub Pages):**
+
+1. Entrá al repositorio en GitHub → **Settings** → **Pages** (en el menú de
+   la izquierda).
+2. En **Source** elegí **Deploy from a branch**.
+3. En **Branch** elegí `main` y en la carpeta elegí **/docs** → **Save**.
+4. GitHub tarda un par de minutos en publicarla. Después queda disponible
+   en:
+   ```
+   https://mgutierrez0907.github.io/maka-desktop/
+   ```
+5. Cada vez que subas cambios a `docs/` (commit + push a `main`), la página
+   se actualiza sola — no hace falta tag ni Release para esto, a diferencia
+   del instalador de escritorio.
+
+**Notas:**
+
+- Funciona en el navegador de cualquier celular o compu (Chrome, Safari,
+  etc.), sin instalar nada — se puede incluso "Agregar a pantalla de
+  inicio" desde el navegador del celular para que se vea como una app.
+- Tiene el menú lateral adaptado para pantallas chicas (se vuelve una barra
+  horizontal con scroll arriba de la pantalla).
+- Usa exactamente la misma base de datos de Supabase que la app de
+  escritorio — lo que se registra desde el celular aparece al toque en la
+  laptop, y viceversa.
+- El repositorio tiene que seguir siendo **Público** para que GitHub Pages
+  funcione sin pasos extra (ya es necesario igual para el auto-update del
+  instalador, así que no cambia nada de lo que ya armamos).
+
 ## Lo que falta pulir (para la próxima vuelta)
 
 - Mandar la nota de entrega / presupuesto directo por WhatsApp (hoy se
