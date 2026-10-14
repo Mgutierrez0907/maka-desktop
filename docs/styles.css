@@ -121,6 +121,33 @@ body {
 .nav-item:hover { color: var(--text); background: var(--panel-2); }
 .nav-item.active { color: var(--text); background: var(--panel-2); border-left: 3px solid var(--accent); }
 
+.nav-group summary {
+  padding: 10px 20px;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  list-style: none;
+  user-select: none;
+}
+
+.nav-group summary::-webkit-details-marker { display: none; }
+
+.nav-group summary::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 6px;
+  transition: transform 0.15s ease;
+}
+
+.nav-group[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.nav-group summary:hover { color: var(--text); }
+
 #sidebar .bottom {
   margin-top: auto;
   padding: 10px 20px;
@@ -284,6 +311,19 @@ form.inline-form button {
   }
 
   .nav-item.active { border-left: none; border-bottom: 3px solid var(--accent); }
+
+  .nav-group {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    flex: 0 0 auto;
+    border-right: 1px solid var(--border);
+  }
+
+  .nav-group summary {
+    padding: 10px 10px;
+    white-space: nowrap;
+  }
 
   #sidebar .bottom {
     margin-top: 0;

@@ -29,16 +29,29 @@
         <span id="user-role-label"></span>
       </div>
       <div class="nav-item" data-view="resumen">Resumen</div>
-      <div class="nav-item" data-view="materiaPrima">Materia prima</div>
-      <div class="nav-item" data-view="productos">Productos</div>
-      <div class="nav-item" data-view="disenos">Diseños</div>
-      <div class="nav-item" data-view="produccion">Producción</div>
-      <div class="nav-item" data-view="clientes">Clientes</div>
-      <div class="nav-item" data-view="ventas">Ventas</div>
-      <div class="nav-item" data-view="presupuestos">Presupuestos</div>
-      <div class="nav-item" data-view="pedidos">Pedidos</div>
-      <div class="nav-item" data-view="compras" data-admin-only="1">Compras</div>
-      <div class="nav-item" data-view="config" data-admin-only="1">Configuración</div>
+
+      <details class="nav-group" open>
+        <summary>Inventario</summary>
+        <div class="nav-item" data-view="materiaPrima">Materia prima</div>
+        <div class="nav-item" data-view="produccion">Producción</div>
+        <div class="nav-item" data-view="productos">Productos</div>
+        <div class="nav-item" data-view="equipos">Equipos</div>
+        <div class="nav-item" data-view="disenos">Diseños</div>
+      </details>
+
+      <details class="nav-group" open>
+        <summary>Compra y venta</summary>
+        <div class="nav-item" data-view="compras" data-admin-only="1">Compras</div>
+        <div class="nav-item" data-view="ventas">Ventas</div>
+        <div class="nav-item" data-view="presupuestos">Presupuestos</div>
+        <div class="nav-item" data-view="pedidos">Pedidos</div>
+        <div class="nav-item" data-view="clientes">Clientes</div>
+      </details>
+
+      <details class="nav-group" open>
+        <summary>Configuración</summary>
+        <div class="nav-item" data-view="config" data-admin-only="1">Configuración</div>
+      </details>
       <div class="bottom">
         <div id="user-email-label"></div>
         <button id="logout-btn">Cerrar sesión</button>

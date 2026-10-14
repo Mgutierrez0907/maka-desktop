@@ -116,6 +116,7 @@ const views = {
   resumen: viewResumen,
   materiaPrima: viewMateriaPrima,
   productos: viewProductos,
+  equipos: viewEquipos,
   disenos: viewDisenos,
   produccion: viewProduccion,
   clientes: viewClientes,
@@ -589,6 +590,150 @@ async function renderReceta(productoCodigo, materiales) {
 }
 
 // ============================================================
+// Equipos (máquinas y herramientas: planchas, papel encerado,
+// quitapelusa, etc. — distinto de materia prima, no se consume
+// por receta, se gestiona a mano)
+// ============================================================
+
+const ESTADOS_EQUIPO = ['Operativo', 'En reparación', 'Dañado', 'De baja'];
+
+async function viewEquipos() {
+  const { data: equipos } = await supabase.from('equipos').select('*').order('codigo');
+
+  content.innerHTML = `
+    <h2>Equipos</h2>
+    <p style="color:var(--muted);font-size:13px;">
+      Máquinas y herramientas de trabajo (planchas, papel encerado, quitapelusa, etc.) —
+      separado de materia prima porque no se consume por receta, se gestiona a mano.
+    </p>
+    ${isAdmin() ? `
+    <form class="inline-form" id="form-equipo">
+      <input type="hidden" name="_editing" value="" />
+      <div class="field">Código<input name="codigo" required placeholder="EQ001" /></div>
+      <div class="field">Nombre<input name="nombre" required placeholder="Plancha térmica" /></div>
+      <div class="field">Categoría<input name="categoria" placeholder="Sublimación" /></div>
+      <div class="field">Cantidad<input name="cantidad" type="number" step="0.0001" value="1" /></div>
+      <div class="field">Estado
+        <select name="estado">${ESTADOS_EQUIPO.map((e) => `<option>${e}</option>`).join('')}</select>
+      </div>
+      <div class="field">Notas<input name="notas" placeholder="Opcional" /></div>
+      <button type="submit" id="equipo-submit-btn">Agregar</button>
+      <button type="button" id="equipo-cancel-btn" style="display:none;background:var(--panel-2);">Cancelar</button>
+    </form>
+    <div id="equipo-msg" class="msg"></div>
+    ` : ''}
+    <table>
+      <tr><th>Código</th><th>Nombre</th><th>Categoría</th><th>Cantidad</th><th>Estado</th><th>Notas</th><th>Activo</th>${isAdmin() ? '<th></th>' : ''}</tr>
+      ${(equipos || [])
+        .map(
+          (eq) =>
+            `<tr data-codigo="${eq.codigo}"><td>${eq.codigo}</td><td>${eq.nombre}</td><td>${eq.categoria || '-'}</td><td>${fmt(eq.cantidad)}</td><td>${eq.estado}</td><td>${eq.notas || '-'}</td>
+              <td>${eq.activo === false ? '<span class="badge" style="color:var(--muted);">Inactivo</span>' : '<span class="badge" style="color:var(--ok);">Activo</span>'}</td>
+              ${isAdmin() ? `<td>
+                <span class="badge edit-equipo" style="cursor:pointer;">Editar</span>
+                ${eq.activo === false
+                  ? `<span class="badge activar-equipo" style="cursor:pointer;color:var(--ok);">Reactivar</span>`
+                  : `<span class="badge delete-equipo" style="cursor:pointer;color:var(--err);">Eliminar</span>`}
+              </td>` : ''}
+            </tr>`
+        )
+        .join('') || `<tr><td colspan="${isAdmin() ? 8 : 7}" style="color:var(--muted);">Todavía no hay equipos cargados.</td></tr>`}
+    </table>
+  `;
+
+  const form = document.getElementById('form-equipo');
+  if (!form) return;
+
+  const codigoInput = form.elements['codigo'];
+  const submitBtn = document.getElementById('equipo-submit-btn');
+  const cancelBtn = document.getElementById('equipo-cancel-btn');
+
+  function resetForm() {
+    form.reset();
+    form.elements['_editing'].value = '';
+    codigoInput.disabled = false;
+    submitBtn.textContent = 'Agregar';
+    cancelBtn.style.display = 'none';
+  }
+
+  cancelBtn.addEventListener('click', resetForm);
+
+  content.querySelectorAll('.edit-equipo').forEach((el) => {
+    el.addEventListener('click', () => {
+      const codigo = el.closest('tr').dataset.codigo;
+      const eq = (equipos || []).find((x) => x.codigo === codigo);
+      if (!eq) return;
+      form.elements['codigo'].value = eq.codigo;
+      form.elements['nombre'].value = eq.nombre;
+      form.elements['categoria'].value = eq.categoria || '';
+      form.elements['cantidad'].value = eq.cantidad;
+      form.elements['estado'].value = eq.estado;
+      form.elements['notas'].value = eq.notas || '';
+      form.elements['_editing'].value = codigo;
+      codigoInput.disabled = true;
+      submitBtn.textContent = 'Guardar cambios';
+      cancelBtn.style.display = 'inline-block';
+      content.scrollIntoView({ behavior: 'smooth' });
+    });
+  });
+
+  content.querySelectorAll('.delete-equipo').forEach((el) => {
+    el.addEventListener('click', async () => {
+      const codigo = el.closest('tr').dataset.codigo;
+      if (!confirm(`¿Eliminar el equipo ${codigo}?`)) return;
+      const { error } = await supabase.from('equipos').delete().eq('codigo', codigo);
+      if (error) {
+        if (error.code === '23503') {
+          if (confirm(`${codigo} tiene historial asociado, así que no se puede borrar.\n\n¿Lo desactivo en su lugar?`)) {
+            const { error: err2 } = await supabase.from('equipos').update({ activo: false }).eq('codigo', codigo);
+            if (err2) alert('No se pudo desactivar: ' + err2.message);
+            else goToView('equipos');
+          }
+        } else {
+          alert('No se pudo eliminar: ' + error.message);
+        }
+      } else {
+        goToView('equipos');
+      }
+    });
+  });
+
+  content.querySelectorAll('.activar-equipo').forEach((el) => {
+    el.addEventListener('click', async () => {
+      const codigo = el.closest('tr').dataset.codigo;
+      const { error } = await supabase.from('equipos').update({ activo: true }).eq('codigo', codigo);
+      if (error) alert('No se pudo reactivar: ' + error.message);
+      else goToView('equipos');
+    });
+  });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(form);
+    const payload = Object.fromEntries(fd.entries());
+    const editingCodigo = payload._editing;
+    delete payload._editing;
+    payload.cantidad = Number(payload.cantidad || 0);
+    if (!payload.notas) delete payload.notas;
+
+    const msg = document.getElementById('equipo-msg');
+    const query = editingCodigo
+      ? supabase.from('equipos').update(payload).eq('codigo', editingCodigo)
+      : supabase.from('equipos').insert(payload);
+
+    const { error } = await query;
+    if (error) {
+      msg.className = 'msg err';
+      msg.textContent = error.message;
+    } else {
+      msg.className = 'msg ok';
+      msg.textContent = editingCodigo ? 'Equipo actualizado.' : 'Equipo agregado.';
+      goToView('equipos');
+    }
+  });
+}
+
+// ============================================================
 // Diseños (catálogo DTF, opcional — admin)
 // ============================================================
 
@@ -805,15 +950,33 @@ async function viewClientes() {
     </form>
     <div id="cliente-msg" class="msg"></div>
     <table>
-      <tr><th>Código</th><th>Doc.</th><th>Nombre</th><th>Dirección fiscal</th><th>Teléfono</th></tr>
+      <tr><th>Código</th><th>Doc.</th><th>Nombre</th><th>Dirección fiscal</th><th>Teléfono</th><th></th></tr>
       ${(clientes || [])
         .map(
           (c) =>
-            `<tr><td>${c.id}</td><td>${c.tipo_documento}-${c.numero_documento}</td><td>${c.nombre}</td><td>${c.direccion_fiscal}</td><td>${c.telefono || '-'}</td></tr>`
+            `<tr data-id="${c.id}"><td>${c.id}</td><td>${c.tipo_documento}-${c.numero_documento}</td><td>${c.nombre}</td><td>${c.direccion_fiscal}</td><td>${c.telefono || '-'}</td>
+              <td>${isAdmin() ? `<span class="badge delete-cliente" style="cursor:pointer;color:var(--err);">Eliminar</span>` : ''}</td></tr>`
         )
         .join('')}
     </table>
   `;
+
+  content.querySelectorAll('.delete-cliente').forEach((el) => {
+    el.addEventListener('click', async () => {
+      const id = el.closest('tr').dataset.id;
+      if (!confirm(`¿Eliminar el cliente ${id}? No se puede deshacer.`)) return;
+      const { error } = await supabase.from('clientes').delete().eq('id', id);
+      if (error) {
+        if (error.code === '23503') {
+          alert(`${id} ya tiene ventas, presupuestos o pedidos asociados, así que no se puede borrar sin perder ese historial.`);
+        } else {
+          alert('No se pudo eliminar: ' + error.message);
+        }
+      } else {
+        goToView('clientes');
+      }
+    });
+  });
 
   document.getElementById('form-cliente').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -883,8 +1046,7 @@ async function viewVentas() {
           <div class="field">Método de pago
             <select name="metodo_pago">
               <option>Efectivo</option><option>Transferencia</option>
-              <option>Tarjeta de Débito</option><option>Pago Móvil</option>
-              <option>Moneda Extranjera</option>
+              <option>Pago Móvil</option><option>USDT</option>
             </select>
           </div>
           <div class="field">Tasa BCV aplicada<input name="tasa_cambio" id="venta-tasa-input" type="number" step="0.0001" value="${config ? config.tasa_bcv_actual : 1}" /></div>
@@ -939,6 +1101,7 @@ async function viewVentas() {
                 <td>
                   <span class="badge imprimir-nota" data-id="${v.id}" style="cursor:pointer;">Nota de entrega</span>
                   <span class="badge toggle-pagos-venta" data-id="${v.id}" style="cursor:pointer;">Pagos</span>
+                  ${isAdmin() ? `<span class="badge delete-venta" data-id="${v.id}" style="cursor:pointer;color:var(--err);">Eliminar</span>` : ''}
                 </td>
               </tr>
               <tr class="pagos-venta-row" data-venta-pagos="${v.id}" style="display:none;"><td colspan="7"></td></tr>`
@@ -1077,6 +1240,24 @@ async function viewVentas() {
       } else {
         row.style.display = '';
         await renderPagosPanel(row.querySelector('td'), { venta_id: ventaId });
+      }
+    });
+  });
+
+  // ---- eliminar venta ----
+  content.querySelectorAll('.delete-venta').forEach((el) => {
+    el.addEventListener('click', async () => {
+      const id = Number(el.dataset.id);
+      if (!confirm('¿Eliminar esta venta? No se restaura el stock automáticamente y no se puede deshacer.')) return;
+      const { error } = await supabase.from('ventas').delete().eq('id', id);
+      if (error) {
+        if (error.code === '23503') {
+          alert('Esta venta tiene pagos u otros registros asociados (por ejemplo, un pedido enlazado). Borrá primero esos registros.');
+        } else {
+          alert('No se pudo eliminar: ' + error.message);
+        }
+      } else {
+        goToView('ventas');
       }
     });
   });
@@ -1321,7 +1502,10 @@ async function viewPresupuestos() {
                   <option value="ajustado" ${p.estado === 'ajustado' ? 'selected' : ''}>Ajustado</option>
                 </select>
               </td>
-              <td><span class="badge imprimir-presupuesto" data-id="${p.id}" style="cursor:pointer;">Imprimir</span></td>
+              <td>
+                <span class="badge imprimir-presupuesto" data-id="${p.id}" style="cursor:pointer;">Imprimir</span>
+                ${isAdmin() ? `<span class="badge delete-presupuesto" data-id="${p.id}" style="cursor:pointer;color:var(--err);">Eliminar</span>` : ''}
+              </td>
             </tr>`
           )
           .join('')}
@@ -1446,6 +1630,24 @@ async function viewPresupuestos() {
   // ---- imprimir ----
   content.querySelectorAll('.imprimir-presupuesto').forEach((el) => {
     el.addEventListener('click', () => imprimirPresupuesto(Number(el.dataset.id)));
+  });
+
+  // ---- eliminar presupuesto ----
+  content.querySelectorAll('.delete-presupuesto').forEach((el) => {
+    el.addEventListener('click', async () => {
+      const id = Number(el.dataset.id);
+      if (!confirm('¿Eliminar este presupuesto? No se puede deshacer.')) return;
+      const { error } = await supabase.from('presupuestos').delete().eq('id', id);
+      if (error) {
+        if (error.code === '23503') {
+          alert('Este presupuesto está enlazado a un Pedido. Desvinculalo o eliminá primero el pedido.');
+        } else {
+          alert('No se pudo eliminar: ' + error.message);
+        }
+      } else {
+        goToView('presupuestos');
+      }
+    });
   });
 
   // ---- guardar ----
@@ -1613,8 +1815,7 @@ async function renderPagosPanel(container, { venta_id = null, pedido_codigo = nu
         <div class="field">Tipo de pago
           <select name="tipo_pago">
             <option>Efectivo</option><option>Transferencia</option>
-            <option>Tarjeta de Débito</option><option>Pago Móvil</option>
-            <option>Moneda Extranjera</option>
+            <option>Pago Móvil</option><option>USDT</option>
           </select>
         </div>
         <div class="field">Monto<input name="monto" type="number" step="0.000001" required /></div>
@@ -1753,6 +1954,7 @@ async function viewPedidos() {
                 ${puedeArmarPresupuesto ? `<span class="badge armar-presupuesto" data-codigo="${p.codigo}" data-cliente="${p.cliente_id || ''}" style="cursor:pointer;">Armar presupuesto</span>` : ''}
                 ${puedeRegistrarVenta ? `<span class="badge registrar-venta-pedido" data-codigo="${p.codigo}" data-cliente="${p.cliente_id || ''}" style="cursor:pointer;color:var(--ok);">Registrar venta</span>` : ''}
                 <span class="badge toggle-pagos-pedido" data-codigo="${p.codigo}" data-total="${presu ? presu.total_estimado : ''}" style="cursor:pointer;">Pagos</span>
+                ${isAdmin() ? `<span class="badge delete-pedido" data-codigo="${p.codigo}" style="cursor:pointer;color:var(--err);">Eliminar</span>` : ''}
               </td>
             </tr>
             <tr class="pagos-pedido-row" data-pedido-pagos="${p.codigo}" style="display:none;"><td colspan="8"></td></tr>`;
@@ -1848,6 +2050,24 @@ async function viewPedidos() {
       } else {
         row.style.display = '';
         await renderPagosPanel(row.querySelector('td'), { pedido_codigo: codigo }, total);
+      }
+    });
+  });
+
+  // ---- eliminar pedido ----
+  content.querySelectorAll('.delete-pedido').forEach((el) => {
+    el.addEventListener('click', async () => {
+      const codigo = el.dataset.codigo;
+      if (!confirm(`¿Eliminar el pedido ${codigo}? No se puede deshacer.`)) return;
+      const { error } = await supabase.from('pedidos').delete().eq('codigo', codigo);
+      if (error) {
+        if (error.code === '23503') {
+          alert('Este pedido tiene pagos, un presupuesto o una venta asociada. Eliminá primero esos registros.');
+        } else {
+          alert('No se pudo eliminar: ' + error.message);
+        }
+      } else {
+        goToView('pedidos');
       }
     });
   });
@@ -2016,19 +2236,15 @@ async function viewConfig() {
       </p>
     </div>
 
-    <div class="card" style="border:1px solid var(--err);">
-      <h3 style="color:var(--err);">Vaciar el sistema</h3>
+    <div class="card">
+      <h3>Borrar registros</h3>
       <p style="color:var(--muted);font-size:13px;">
-        Borra <strong>todo</strong> lo cargado — materia prima, productos, diseños, clientes,
-        compras, ventas, producción, pedidos, presupuestos y pagos — para arrancar en limpio antes
-        de usar el sistema en producción. No borra las cuentas de acceso (tu usuario y el de
-        María). <strong>Esta acción no se puede deshacer.</strong>
+        Ya no hay un botón para vaciar todo el sistema de una vez — para no arriesgar borrar
+        presupuestos o ventas reales por error. Cada módulo (Materia prima, Productos, Equipos,
+        Diseños, Clientes, Compras, Ventas, Presupuestos, Pedidos) tiene su propio botón
+        <strong>Eliminar</strong> por fila, así que podés borrar registros de prueba uno por uno
+        sin tocar lo que ya enviaste a un cliente.
       </p>
-      <div class="inline-form">
-        <div class="field">Escribí BORRAR TODO para confirmar<input id="reset-confirm-input" placeholder="BORRAR TODO" style="width:200px" /></div>
-        <button type="button" id="reset-sistema-btn" style="background:var(--err);">Vaciar el sistema</button>
-      </div>
-      <div id="reset-msg" class="msg"></div>
     </div>
   `;
 
@@ -2044,29 +2260,6 @@ async function viewConfig() {
     } else {
       msg.className = 'msg ok';
       msg.textContent = 'Tasa actualizada.';
-    }
-  });
-
-  document.getElementById('reset-sistema-btn').addEventListener('click', async () => {
-    const input = document.getElementById('reset-confirm-input');
-    const msg = document.getElementById('reset-msg');
-    if (input.value.trim().toUpperCase() !== 'BORRAR TODO') {
-      msg.className = 'msg err';
-      msg.textContent = 'Escribí exactamente BORRAR TODO para confirmar.';
-      return;
-    }
-    if (!confirm('Esto borra absolutamente todo lo cargado en el sistema y no se puede deshacer. ¿Confirmás?')) {
-      return;
-    }
-    const { error } = await supabase.rpc('resetear_sistema');
-    if (error) {
-      msg.className = 'msg err';
-      msg.textContent = error.message;
-    } else {
-      msg.className = 'msg ok';
-      msg.textContent = 'Sistema vaciado. Ya podés empezar a cargar los datos reales.';
-      input.value = '';
-      goToView('resumen');
     }
   });
 }

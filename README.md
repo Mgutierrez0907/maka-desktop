@@ -8,9 +8,10 @@ Corre igual en Ubuntu y en Windows.
 1. Corré en el SQL Editor de Supabase, en este orden: `maka_schema.sql`,
    `maka_schema_funciones.sql`, `maka_schema_compras.sql`,
    `maka_schema_activo.sql`, el fix de la columna de compras,
-   `maka_schema_costo_ponderado.sql`, y por último `maka_schema_v2.sql`
-   (corte/talla en productos, acceso de ventas a Diseños, Pedidos, Pagos
-   y el reset total del sistema).
+   `maka_schema_costo_ponderado.sql`, `maka_schema_v2.sql`
+   (corte/talla en productos, acceso de ventas a Diseños, Pedidos y Pagos),
+   y por último `maka_schema_v3.sql` (módulo de Equipos y se quita el
+   reset total del sistema).
 2. Confirmá que tu usuario y el de María ya tienen fila en `perfiles` con
    su `rol` (`admin` / `ventas`).
 
@@ -102,6 +103,11 @@ repositorio) → bajar hasta **Danger Zone** → **Change visibility** →
 
 - Login contra Supabase Auth, con el rol (admin/ventas) leído de la tabla
   `perfiles` — el menú lateral se ajusta solo según el rol.
+- El menú lateral está agrupado en tres carpetas plegables para que no se
+  vea saturado a medida que se agregan funciones: **Inventario**
+  (Materia prima, Producción, Productos, Equipos, Diseños), **Compra y
+  venta** (Compras, Ventas, Presupuestos, Pedidos, Clientes) y
+  **Configuración**.
 - **Resumen**: stock de productos, cuáles están bajos, últimas ventas.
 - **Materia prima**: solo lectura de stock y costo — el alta es solo para
   dar de alta un material nuevo (código/nombre/unidad/categoría). El
@@ -110,6 +116,10 @@ repositorio) → bajar hasta **Danger Zone** → **Change visibility** →
 - **Productos**: alta, edición y baja (desactivar en vez de borrar si ya
   tienen historial), con corte (Slim fit / Clásica / Oversize) y talla
   (infantil 2–16, adulto S–XL) para camisas.
+- **Equipos**: máquinas y herramientas de trabajo (planchas, papel
+  encerado, quitapelusa, etc.) — separado de materia prima porque no se
+  consume por receta. Solo el admin da de alta/edita/borra, María
+  (ventas) lo puede consultar.
 - **Diseños**: catálogo (DTF u otros) para enlazar a productos — visible y
   editable tanto por admin como por ventas (eliminar sigue siendo solo
   admin).
@@ -120,6 +130,7 @@ repositorio) → bajar hasta **Danger Zone** → **Change visibility** →
 - **Ventas**: calcula IVA/exento, muestra el total en Bs en vivo, descuenta
   stock automáticamente, imprime una nota de entrega con el logo, y
   permite registrar los pagos/abonos de cada venta (botón "Pagos").
+  Métodos de pago: Efectivo, Transferencia, Pago Móvil y USDT.
 - **Presupuestos**: arma un presupuesto (sin descontar stock), con estado
   pendiente/aceptado/rechazado/ajustado, se puede enlazar a un Pedido, e
   imprime una nota con el logo.
@@ -131,9 +142,13 @@ repositorio) → bajar hasta **Danger Zone** → **Change visibility** →
   personalizados).
 - **Compras**: suma el stock de materia prima y recalcula el costo
   unitario como promedio ponderado.
-- **Configuración**: tasa BCV, y un botón para **vaciar todo el sistema**
-  (catálogos incluidos) antes de pasar a producción — pide escribir
-  "BORRAR TODO" para confirmar, y no toca las cuentas de acceso.
+- **Configuración**: tasa BCV. Ya no existe un botón para vaciar todo el
+  sistema de una sola vez — para no correr el riesgo de borrar por error
+  presupuestos o ventas reales (por ejemplo, los que ya se le mandaron a
+  un cliente). En su lugar, Materia prima, Productos, Equipos, Diseños,
+  Clientes, Compras, Ventas, Presupuestos y Pedidos tienen cada uno su
+  propio botón **Eliminar** por fila, así que los registros de prueba se
+  borran uno por uno, a mano, sin tocar lo que ya es real.
 - **Compras** y **Configuración**: solo visibles para admin.
 
 ## Versión web (alternativa al instalador, para cuando no hay laptop a mano)
