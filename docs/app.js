@@ -141,6 +141,21 @@ function isAdmin() {
   return currentPerfil && currentPerfil.rol === 'admin';
 }
 
+// Etapas de producción de un pedido (independiente del estado comercial
+// pendiente/aprobado/etc., que sigue al presupuesto y a la venta).
+const ETAPAS_PEDIDO = ['Presupuestado', 'En diseño', 'Para impresión', 'Producción', 'Listo para entrega'];
+
+// Un pago expresado en USD: los pagos en VES se convierten con la tasa
+// BCV con la que se registraron.
+function pagoEnUsd(p) {
+  const monto = Number(p.monto);
+  if (p.moneda === 'VES') {
+    const tasa = Number(p.tasa_cambio_bcv_aplicada);
+    return tasa > 0 ? monto / tasa : 0;
+  }
+  return monto;
+}
+
 // ============================================================
 // Resumen
 // ============================================================
@@ -148,6 +163,7 @@ function isAdmin() {
 async function viewResumen() {
   const { data: productos } = await supabase.from('productos').select('codigo,nombre,stock');
   const { data: materiales } = await supabase.from('materia_prima').select('codigo,nombre,stock');
+  const { data: pedidosResumen } = await supabase.from('pedidos').select('estado,etapa');
   const { data: ventasRecientes } = await supabase
     .from('ventas')
     .select('numero_factura,fecha,gran_total,moneda_pago,cliente_id')
@@ -156,6 +172,10 @@ async function viewResumen() {
 
   const stockTotalProductos = (productos || []).reduce((a, p) => a + Number(p.stock), 0);
   const bajoStock = (productos || []).filter((p) => Number(p.stock) <= 3);
+  const pedidosActivos = (pedidosResumen || []).filter((p) => !['completado', 'rechazado'].includes(p.estado));
+  const pedidosListos = pedidosActivos.filter((p) => p.etapa === 'Listo para entrega');
+  const conteoEtapas = ETAPAS_PEDIDO.map((et) => ({ etapa: et, n: pedidosActivos.filter((p) => p.etapa === et).length }));
+  const sinEtapa = pedidosActivos.filter((p) => !p.etapa).length;
 
   content.innerHTML = `
     <h2>Resumen</h2>
@@ -164,6 +184,17 @@ async function viewResumen() {
       <div class="stat"><div class="label">Unidades en stock</div><div class="value">${fmt(stockTotalProductos)}</div></div>
       <div class="stat"><div class="label">Materiales (SKUs)</div><div class="value">${(materiales || []).length}</div></div>
       <div class="stat"><div class="label">Con stock bajo (≤3)</div><div class="value">${bajoStock.length}</div></div>
+      <div class="stat"><div class="label">Pedidos activos</div><div class="value">${pedidosActivos.length}</div></div>
+      <div class="stat"><div class="label">Listos para entrega</div><div class="value">${pedidosListos.length}</div></div>
+    </div>
+
+    <div class="card">
+      <h3>Pedidos activos por etapa</h3>
+      <table>
+        <tr><th>Etapa</th><th>Pedidos</th></tr>
+        ${conteoEtapas.map((c) => `<tr><td>${c.etapa}</td><td>${c.n}</td></tr>`).join('')}
+        <tr><td style="color:var(--muted);">Sin etapa asignada</td><td>${sinEtapa}</td></tr>
+      </table>
     </div>
 
     <div class="card">
@@ -1782,17 +1813,21 @@ async function imprimirPresupuesto(presupuestoId) {
 // Pagos (panel compartido — se usa dentro de Ventas y de Pedidos)
 // ============================================================
 
-async function renderPagosPanel(container, { venta_id = null, pedido_codigo = null } = {}, totalReferencia = null) {
+async function renderPagosPanel(container, { venta_id = null, pedido_codigo = null } = {}, totalReferencia = null, onCambio = null) {
   const filtro = venta_id ? { venta_id } : { pedido_codigo };
   let query = supabase.from('pagos').select('*').order('fecha', { ascending: false });
   query = venta_id ? query.eq('venta_id', venta_id) : query.eq('pedido_codigo', pedido_codigo);
   const { data: pagos } = await query;
 
-  const totalPagado = (pagos || []).reduce((acc, p) => acc + Number(p.monto), 0);
+  const totalPagado = (pagos || []).reduce((acc, p) => acc + pagoEnUsd(p), 0);
+  const vesSinTasa = (pagos || []).some((p) => p.moneda === 'VES' && !(Number(p.tasa_cambio_bcv_aplicada) > 0));
+  const avisoTasa = vesSinTasa
+    ? '<div class="msg err">Hay pagos en VES sin tasa BCV: no se pueden convertir a USD y no cuentan en el total.</div>'
+    : '';
   const saldoHtml =
-    totalReferencia != null
-      ? `<div style="font-size:13px;margin-top:6px;">Total: <strong>${fmt(totalReferencia)}</strong> · Pagado: <strong>${fmt(totalPagado)}</strong> · Saldo: <strong style="color:${totalReferencia - totalPagado > 0.009 ? 'var(--err)' : 'var(--ok)'};">${fmt(totalReferencia - totalPagado)}</strong></div>`
-      : `<div style="font-size:13px;margin-top:6px;">Pagado hasta ahora: <strong>${fmt(totalPagado)}</strong></div>`;
+    (totalReferencia != null
+      ? `<div style="font-size:13px;margin-top:6px;">Total: <strong>${fmt(totalReferencia)} USD</strong> · Pagado: <strong>${fmt(totalPagado)} USD</strong> · Saldo: <strong style="color:${totalReferencia - totalPagado > 0.009 ? 'var(--err)' : 'var(--ok)'};">${fmt(totalReferencia - totalPagado)} USD</strong></div>`
+      : `<div style="font-size:13px;margin-top:6px;">Pagado hasta ahora: <strong>${fmt(totalPagado)} USD</strong></div>`) + avisoTasa;
 
   container.innerHTML = `
     <div class="card" style="margin:8px 0;">
@@ -1843,7 +1878,8 @@ async function renderPagosPanel(container, { venta_id = null, pedido_codigo = nu
       msg.className = 'msg err';
       msg.textContent = error.message;
     } else {
-      renderPagosPanel(container, { venta_id, pedido_codigo }, totalReferencia);
+      await renderPagosPanel(container, { venta_id, pedido_codigo }, totalReferencia, onCambio);
+      if (onCambio) onCambio();
     }
   });
 }
@@ -1856,9 +1892,18 @@ async function viewPedidos() {
   let clientes = (await supabase.from('clientes').select('id,nombre')).data || [];
   const { data: pedidos } = await supabase
     .from('pedidos')
-    .select('codigo,fecha,cliente_id,estado,presupuesto_id,venta_id,notas')
+    .select('codigo,fecha,cliente_id,estado,etapa,presupuesto_id,venta_id,notas')
     .order('fecha', { ascending: false })
     .limit(30);
+
+  const { data: pagosPedidos } = (pedidos || []).length
+    ? await supabase
+        .from('pagos')
+        .select('pedido_codigo,monto,moneda,tasa_cambio_bcv_aplicada')
+        .in('pedido_codigo', pedidos.map((p) => p.codigo))
+    : { data: [] };
+  const pagadoUsdPedido = (codigo) =>
+    (pagosPedidos || []).filter((x) => x.pedido_codigo === codigo).reduce((acc, x) => acc + pagoEnUsd(x), 0);
 
   const presupuestoIds = (pedidos || []).map((p) => p.presupuesto_id).filter(Boolean);
   const ventaIds = (pedidos || []).map((p) => p.venta_id).filter(Boolean);
@@ -1889,6 +1934,29 @@ async function viewPedidos() {
     ajustado: '#c9a227',
     completado: 'var(--ok)',
   };
+
+  function pagadoCellHtml(pagado, total, estado) {
+    if (total == null) return pagado > 0 ? `${fmt(pagado)} USD` : '-';
+    const completo = pagado >= total - 0.009 && total > 0;
+    const pct = total > 0 ? Math.min(100, Math.round((pagado / total) * 100)) : 0;
+    const color = completo ? 'var(--ok)' : pagado > 0 ? '#c9a227' : 'var(--muted)';
+    const aviso = completo && estado !== 'completado'
+      ? '<br/><span class="badge" style="color:var(--ok);">100% pagado — falta registrar la venta</span>'
+      : '';
+    return `<span style="color:${color};">${fmt(pagado)} / ${fmt(total)} USD (${pct}%)</span>${aviso}`;
+  }
+
+  async function refrescarPagadoPedido(codigo) {
+    const p = (pedidos || []).find((x) => x.codigo === codigo);
+    const presu = p && (presupuestosInfo || []).find((x) => x.id === p.presupuesto_id);
+    const { data } = await supabase
+      .from('pagos')
+      .select('monto,moneda,tasa_cambio_bcv_aplicada')
+      .eq('pedido_codigo', codigo);
+    const pagado = (data || []).reduce((acc, x) => acc + pagoEnUsd(x), 0);
+    const cell = content.querySelector(`td[data-pagado-cell="${codigo}"]`);
+    if (cell) cell.innerHTML = pagadoCellHtml(pagado, presu ? Number(presu.total_estimado) : null, p ? p.estado : '');
+  }
 
   content.innerHTML = `
     <h2>Pedidos</h2>
@@ -1930,7 +1998,7 @@ async function viewPedidos() {
     </div>
 
     <table>
-      <tr><th>Pedido</th><th>Fecha</th><th>Cliente</th><th>Estado</th><th>Presupuesto</th><th>Venta</th><th>Notas</th><th></th></tr>
+      <tr><th>Pedido</th><th>Fecha</th><th>Cliente</th><th>Estado</th><th>Etapa</th><th>Presupuesto</th><th>Pagado</th><th>Venta</th><th>Notas</th><th></th></tr>
       ${(pedidos || [])
         .map((p) => {
           const presu = (presupuestosInfo || []).find((x) => x.id === p.presupuesto_id);
@@ -1943,7 +2011,14 @@ async function viewPedidos() {
               <td>${p.fecha}</td>
               <td>${p.cliente_id || '-'}</td>
               <td><span class="badge" style="color:${ESTADO_COLOR[p.estado] || 'var(--muted)'};">${ESTADO_LABEL[p.estado] || p.estado}</span></td>
+              <td>
+                <select class="etapa-select" data-codigo="${p.codigo}" ${p.estado === 'completado' ? 'disabled' : ''}>
+                  <option value="">(sin etapa)</option>
+                  ${ETAPAS_PEDIDO.map((et) => `<option value="${et}" ${p.etapa === et ? 'selected' : ''}>${et}</option>`).join('')}
+                </select>
+              </td>
               <td>${presu ? `${fmt(presu.total_estimado)} ${presu.moneda}` : '-'}</td>
+              <td data-pagado-cell="${p.codigo}">${pagadoCellHtml(pagadoUsdPedido(p.codigo), presu ? Number(presu.total_estimado) : null, p.estado)}</td>
               <td>${venta ? `#${venta.numero_factura} (${fmt(venta.gran_total)} ${venta.moneda_pago})` : '-'}</td>
               <td style="max-width:160px;">${p.notas || '-'}</td>
               <td>
@@ -1955,8 +2030,8 @@ async function viewPedidos() {
                 ${isAdmin() ? `<span class="badge delete-pedido" data-codigo="${p.codigo}" style="cursor:pointer;color:var(--err);">Eliminar</span>` : ''}
               </td>
             </tr>
-            <tr class="vincular-pedido-row" data-pedido-vincular="${p.codigo}" style="display:none;"><td colspan="8"></td></tr>
-            <tr class="pagos-pedido-row" data-pedido-pagos="${p.codigo}" style="display:none;"><td colspan="8"></td></tr>`;
+            <tr class="vincular-pedido-row" data-pedido-vincular="${p.codigo}" style="display:none;"><td colspan="10"></td></tr>
+            <tr class="pagos-pedido-row" data-pedido-pagos="${p.codigo}" style="display:none;"><td colspan="10"></td></tr>`;
         })
         .join('')}
     </table>
@@ -2025,6 +2100,20 @@ async function viewPedidos() {
     el.addEventListener('click', () => {
       pedidoParaPresupuesto = { codigo: el.dataset.codigo, cliente_id: el.dataset.cliente || null };
       goToView('presupuestos');
+    });
+  });
+
+  // ---- etapa del pedido ----
+  content.querySelectorAll('.etapa-select').forEach((sel) => {
+    sel.addEventListener('change', async () => {
+      const { error } = await supabase
+        .from('pedidos')
+        .update({ etapa: sel.value || null })
+        .eq('codigo', sel.dataset.codigo);
+      if (error) {
+        alert('No se pudo cambiar la etapa: ' + error.message);
+        goToView('pedidos');
+      }
     });
   });
 
@@ -2145,7 +2234,7 @@ async function viewPedidos() {
         row.querySelector('td').innerHTML = '';
       } else {
         row.style.display = '';
-        await renderPagosPanel(row.querySelector('td'), { pedido_codigo: codigo }, total);
+        await renderPagosPanel(row.querySelector('td'), { pedido_codigo: codigo }, total, () => refrescarPagadoPedido(codigo));
       }
     });
   });
