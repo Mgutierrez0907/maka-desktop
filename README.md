@@ -10,8 +10,9 @@ Corre igual en Ubuntu y en Windows.
    `maka_schema_activo.sql`, el fix de la columna de compras,
    `maka_schema_costo_ponderado.sql`, `maka_schema_v2.sql`
    (corte/talla en productos, acceso de ventas a Diseños, Pedidos y Pagos),
-   y por último `maka_schema_v3.sql` (módulo de Equipos y se quita el
-   reset total del sistema).
+   `maka_schema_v3.sql` (módulo de Equipos y se quita el reset total del
+   sistema), y por último `maka_schema_v4.sql` (arregla el bucle al borrar
+   un presupuesto enlazado a un pedido).
 2. Confirmá que tu usuario y el de María ya tienen fila en `perfiles` con
    su `rol` (`admin` / `ventas`).
 
@@ -139,7 +140,10 @@ repositorio) → bajar hasta **Danger Zone** → **Change visibility** →
   presupuesto queda aceptado el pedido pasa a "Aprobado" y habilita
   "Registrar venta" para cerrarlo. Cada pedido también tiene su propio
   registro de pagos/abonos (útil para el 50% inicial de los pedidos
-  personalizados).
+  personalizados). Un pedido también se puede enlazar a un presupuesto
+  que ya existía antes de crear el pedido (botón "Vincular presupuesto
+  existente") y se puede desenlazar sin borrar nada ("Desvincular
+  presupuesto").
 - **Compras**: suma el stock de materia prima y recalcula el costo
   unitario como promedio ponderado.
 - **Configuración**: tasa BCV. Ya no existe un botón para vaciar todo el

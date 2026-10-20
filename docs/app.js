@@ -1949,10 +1949,13 @@ async function viewPedidos() {
               <td>
                 ${puedeArmarPresupuesto ? `<span class="badge armar-presupuesto" data-codigo="${p.codigo}" data-cliente="${p.cliente_id || ''}" style="cursor:pointer;">Armar presupuesto</span>` : ''}
                 ${puedeRegistrarVenta ? `<span class="badge registrar-venta-pedido" data-codigo="${p.codigo}" data-cliente="${p.cliente_id || ''}" style="cursor:pointer;color:var(--ok);">Registrar venta</span>` : ''}
+                ${puedeArmarPresupuesto && !p.presupuesto_id ? `<span class="badge vincular-presupuesto" data-codigo="${p.codigo}" data-cliente="${p.cliente_id || ''}" style="cursor:pointer;">Vincular presupuesto existente</span>` : ''}
+                ${p.presupuesto_id && p.estado !== 'completado' ? `<span class="badge desvincular-presupuesto" data-codigo="${p.codigo}" data-presupuesto="${p.presupuesto_id}" style="cursor:pointer;color:var(--muted);">Desvincular presupuesto</span>` : ''}
                 <span class="badge toggle-pagos-pedido" data-codigo="${p.codigo}" data-total="${presu ? presu.total_estimado : ''}" style="cursor:pointer;">Pagos</span>
                 ${isAdmin() ? `<span class="badge delete-pedido" data-codigo="${p.codigo}" style="cursor:pointer;color:var(--err);">Eliminar</span>` : ''}
               </td>
             </tr>
+            <tr class="vincular-pedido-row" data-pedido-vincular="${p.codigo}" style="display:none;"><td colspan="8"></td></tr>
             <tr class="pagos-pedido-row" data-pedido-pagos="${p.codigo}" style="display:none;"><td colspan="8"></td></tr>`;
         })
         .join('')}
@@ -2022,6 +2025,103 @@ async function viewPedidos() {
     el.addEventListener('click', () => {
       pedidoParaPresupuesto = { codigo: el.dataset.codigo, cliente_id: el.dataset.cliente || null };
       goToView('presupuestos');
+    });
+  });
+
+  // ---- vincular un presupuesto que ya existía (creado antes del módulo Pedidos) ----
+  const ESTADO_PEDIDO_DESDE_PRESUPUESTO = {
+    aceptado: 'aprobado',
+    rechazado: 'rechazado',
+    ajustado: 'ajustado',
+  };
+
+  content.querySelectorAll('.vincular-presupuesto').forEach((el) => {
+    el.addEventListener('click', async () => {
+      const codigo = el.dataset.codigo;
+      const clienteId = el.dataset.cliente || null;
+      const row = content.querySelector(`tr[data-pedido-vincular="${codigo}"]`);
+      if (row.style.display !== 'none') {
+        row.style.display = 'none';
+        return;
+      }
+      row.style.display = '';
+      const cell = row.firstElementChild;
+      cell.innerHTML = 'Cargando presupuestos...';
+
+      const { data: libres, error } = await supabase
+        .from('presupuestos')
+        .select('id,fecha,cliente_id,total_estimado,moneda,estado')
+        .is('pedido_id', null)
+        .order('fecha', { ascending: false });
+      if (error) {
+        cell.innerHTML = `<span class="msg err">${error.message}</span>`;
+        return;
+      }
+      if (!libres || !libres.length) {
+        cell.innerHTML = '<span style="color:var(--muted);">No hay presupuestos sin pedido para vincular.</span>';
+        return;
+      }
+      // primero los del mismo cliente
+      libres.sort((a, b) => (b.cliente_id === clienteId) - (a.cliente_id === clienteId));
+
+      cell.innerHTML = `
+        <div class="inline-form" style="margin:6px 0;">
+          <div class="field">Presupuesto a vincular al pedido ${codigo}
+            <select class="vincular-select" style="min-width:320px;">
+              ${libres
+                .map(
+                  (pr) =>
+                    `<option value="${pr.id}">#${pr.id} — ${pr.fecha} — ${pr.cliente_id || 'sin cliente'} — ${fmt(pr.total_estimado)} ${pr.moneda} — ${pr.estado}${pr.cliente_id === clienteId ? ' (mismo cliente)' : ''}</option>`
+                )
+                .join('')}
+            </select>
+          </div>
+          <button type="button" class="vincular-confirmar">Vincular</button>
+        </div>
+        <div class="msg vincular-msg"></div>`;
+
+      cell.querySelector('.vincular-confirmar').addEventListener('click', async () => {
+        const id = Number(cell.querySelector('.vincular-select').value);
+        const pr = libres.find((x) => x.id === id);
+        const vmsg = cell.querySelector('.vincular-msg');
+        const { error: e1 } = await supabase.from('presupuestos').update({ pedido_id: codigo }).eq('id', id);
+        if (e1) {
+          vmsg.className = 'msg err';
+          vmsg.textContent = e1.message;
+          return;
+        }
+        const { error: e2 } = await supabase
+          .from('pedidos')
+          .update({ presupuesto_id: id, estado: ESTADO_PEDIDO_DESDE_PRESUPUESTO[pr.estado] || 'presupuestado' })
+          .eq('codigo', codigo);
+        if (e2) {
+          // deshacer el primer paso para no dejar el vínculo a medias
+          await supabase.from('presupuestos').update({ pedido_id: null }).eq('id', id);
+          vmsg.className = 'msg err';
+          vmsg.textContent = e2.message;
+          return;
+        }
+        goToView('pedidos');
+      });
+    });
+  });
+
+  content.querySelectorAll('.desvincular-presupuesto').forEach((el) => {
+    el.addEventListener('click', async () => {
+      const codigo = el.dataset.codigo;
+      const presupuestoId = Number(el.dataset.presupuesto);
+      if (!confirm(`¿Desvincular el presupuesto #${presupuestoId} del pedido ${codigo}? El presupuesto no se borra, solo deja de estar enlazado.`)) return;
+      const { error: e1 } = await supabase.from('presupuestos').update({ pedido_id: null }).eq('id', presupuestoId);
+      if (e1) {
+        alert('No se pudo desvincular: ' + e1.message);
+        return;
+      }
+      const { error: e2 } = await supabase
+        .from('pedidos')
+        .update({ presupuesto_id: null, estado: 'pendiente' })
+        .eq('codigo', codigo);
+      if (e2) alert('No se pudo actualizar el pedido: ' + e2.message);
+      goToView('pedidos');
     });
   });
 
