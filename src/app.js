@@ -85,10 +85,18 @@ async function afterLogin(user) {
   document.getElementById('user-role-label').textContent =
     perfil.rol === 'admin' ? 'Administrador' : 'Ventas';
   document.getElementById('user-email-label').textContent = user.email;
+  const iniciales = (perfil.nombre || '')
+    .split(' ')
+    .filter(Boolean)
+    .map((w) => w[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+  document.getElementById('user-avatar').textContent = iniciales || user.email.slice(0, 2).toUpperCase();
 
   // Ocultar ítems solo-admin si corresponde
   document.querySelectorAll('[data-admin-only]').forEach((el) => {
-    el.style.display = perfil.rol === 'admin' ? 'block' : 'none';
+    el.style.display = perfil.rol === 'admin' ? '' : 'none';
   });
 
   loginScreen.style.display = 'none';
@@ -131,6 +139,11 @@ function goToView(name) {
   document.querySelectorAll('.nav-item').forEach((el) => {
     el.classList.toggle('active', el.dataset.view === name);
   });
+  const meta = VIEW_META[name] || [name, ''];
+  document.getElementById('topbar-title').textContent = meta[0];
+  document.getElementById('topbar-chip').textContent = meta[1];
+  document.getElementById('global-search').value = '';
+  refrescarBadges();
   content.innerHTML = '<p>Cargando...</p>';
   views[name]().catch((err) => {
     content.innerHTML = `<p class="msg err">Error: ${err.message}</p>`;
@@ -144,6 +157,95 @@ function fmt(n) {
 function isAdmin() {
   return currentPerfil && currentPerfil.rol === 'admin';
 }
+
+// ---------- Iconos (trazos simples, mismo estilo en todo el sistema) ----------
+const ICONS = {
+  shirt: '<path d="M20.38 3.46 16 2a4 4 0 0 1-8 0L3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.47a1 1 0 0 0 .99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 0 0 2-2V10h2.15a1 1 0 0 0 .99-.84l.58-3.47a2 2 0 0 0-1.34-2.23z"/>',
+  layers: '<path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/>',
+  alert: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  package: '<path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"/><path d="M12 22V12"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="m7.5 4.27 9 5.15"/>',
+  file: '<path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/>',
+  pencil: '<path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>',
+  printer: '<path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/>',
+  flame: '<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>',
+  help: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
+  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  bag: '<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/>',
+};
+
+function icon_(name, extra = '') {
+  return `<svg class="icon ${extra}" viewBox="0 0 24 24">${ICONS[name] || ''}</svg>`;
+}
+
+// Título y etiqueta de la barra superior según la pantalla
+const VIEW_META = {
+  resumen: ['Resumen', 'Panel de control'],
+  productos: ['Productos', 'Inventario'],
+  materiaPrima: ['Materia prima', 'Inventario'],
+  produccion: ['Producción', 'Inventario'],
+  equipos: ['Equipos', 'Inventario'],
+  disenos: ['Diseños', 'Inventario'],
+  pedidos: ['Pedidos', 'Compra y venta'],
+  presupuestos: ['Presupuestos', 'Compra y venta'],
+  ventas: ['Ventas', 'Compra y venta'],
+  clientes: ['Clientes', 'Compra y venta'],
+  compras: ['Compras', 'Compra y venta'],
+  config: ['Configuración', 'Ajustes'],
+};
+
+// Contadores del menú lateral (productos activos, materiales, equipos, pedidos en curso)
+async function refrescarBadges() {
+  const contar = async (query) => {
+    try {
+      const { count, error } = await query;
+      return error ? null : count;
+    } catch (e) {
+      return null;
+    }
+  };
+  const head = { count: 'exact', head: true };
+  const [productos, materia, equipos, pedidos] = await Promise.all([
+    contar(supabase.from('productos').select('*', head).eq('activo', true)),
+    contar(supabase.from('materia_prima').select('*', head).eq('activo', true)),
+    contar(supabase.from('equipos').select('*', head).eq('activo', true)),
+    contar(supabase.from('pedidos').select('*', head).not('estado', 'in', '(completado,rechazado)')),
+  ]);
+  const valores = { productos, materiaPrima: materia, equipos, pedidos };
+  document.querySelectorAll('[data-badge]').forEach((el) => {
+    const v = valores[el.dataset.badge];
+    el.textContent = typeof v === 'number' && v > 0 ? String(v) : '';
+  });
+}
+
+// Filtro rápido de la barra superior: oculta las filas de la lista actual que no coinciden
+function aplicarFiltroRapido() {
+  const term = document.getElementById('global-search').value.trim().toLowerCase();
+  content.querySelectorAll('tr[data-codigo], tr[data-id], tr.filtrable').forEach((tr) => {
+    if (tr.classList.contains('pagos-pedido-row') || tr.classList.contains('vincular-pedido-row')) return;
+    tr.style.display = !term || tr.textContent.toLowerCase().includes(term) ? '' : 'none';
+  });
+}
+
+document.getElementById('global-search').addEventListener('input', aplicarFiltroRapido);
+document.getElementById('global-search').addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    e.target.value = '';
+    aplicarFiltroRapido();
+    e.target.blur();
+  }
+});
+document.addEventListener('keydown', (e) => {
+  const tag = (document.activeElement && document.activeElement.tagName) || '';
+  if (e.key === '/' && !['INPUT', 'SELECT', 'TEXTAREA'].includes(tag)) {
+    e.preventDefault();
+    document.getElementById('global-search').focus();
+  }
+});
+document.querySelectorAll('.nav-group-title').forEach((t) =>
+  t.addEventListener('click', () => t.parentElement.classList.toggle('open'))
+);
+document.getElementById('quick-venta').addEventListener('click', () => goToView('ventas'));
+document.getElementById('quick-pedido').addEventListener('click', () => goToView('pedidos'));
 
 // Etapas de producción de un pedido (independiente del estado comercial
 // pendiente/aprobado/etc., que sigue al presupuesto y a la venta).
@@ -165,65 +267,249 @@ function pagoEnUsd(p) {
 // ============================================================
 
 async function viewResumen() {
-  const { data: productos } = await supabase.from('productos').select('codigo,nombre,stock');
-  const { data: materiales } = await supabase.from('materia_prima').select('codigo,nombre,stock');
-  const { data: pedidosResumen } = await supabase.from('pedidos').select('estado,etapa');
-  const { data: ventasRecientes } = await supabase
-    .from('ventas')
-    .select('numero_factura,fecha,gran_total,moneda_pago,cliente_id')
-    .order('fecha', { ascending: false })
-    .limit(8);
+  const [prodRes, matRes, pedRes, ventasRes] = await Promise.all([
+    supabase.from('productos').select('codigo,nombre,stock,corte,talla,activo').order('codigo'),
+    supabase.from('materia_prima').select('codigo,stock,activo'),
+    supabase.from('pedidos').select('codigo,fecha,cliente_id,estado,etapa').order('fecha', { ascending: false }),
+    supabase
+      .from('ventas')
+      .select('numero_factura,fecha,gran_total,moneda_pago,cliente_id')
+      .order('fecha', { ascending: false })
+      .limit(6),
+  ]);
 
-  const stockTotalProductos = (productos || []).reduce((a, p) => a + Number(p.stock), 0);
-  const bajoStock = (productos || []).filter((p) => Number(p.stock) <= 3);
-  const pedidosActivos = (pedidosResumen || []).filter((p) => !['completado', 'rechazado'].includes(p.estado));
-  const pedidosListos = pedidosActivos.filter((p) => p.etapa === 'Listo para entrega');
-  const conteoEtapas = ETAPAS_PEDIDO.map((et) => ({ etapa: et, n: pedidosActivos.filter((p) => p.etapa === et).length }));
-  const sinEtapa = pedidosActivos.filter((p) => !p.etapa).length;
+  // si todavía no se corrió maka_schema_v5.sql, la columna "etapa" no existe: se sigue sin ella
+  let pedidosData = pedRes.data;
+  if (pedRes.error) {
+    const r = await supabase.from('pedidos').select('codigo,fecha,cliente_id,estado').order('fecha', { ascending: false });
+    pedidosData = r.data;
+  }
+
+  const productos = (prodRes.data || []).filter((p) => p.activo !== false);
+  const materiales = (matRes.data || []).filter((m) => m.activo !== false);
+  const ventasRecientes = ventasRes.data || [];
+  const pedidosActivos = (pedidosData || []).filter((p) => !['completado', 'rechazado'].includes(p.estado));
+
+  const unidades = productos.reduce((a, p) => a + Number(p.stock), 0);
+  const agotados = productos.filter((p) => Number(p.stock) <= 0);
+  const bajoStock = productos.filter((p) => Number(p.stock) <= 3);
+  const listos = pedidosActivos.filter((p) => p.etapa === 'Listo para entrega');
+
+  const ETAPAS_INFO = [
+    { nombre: 'Presupuestado', desc: 'Cotizaciones enviadas', icon: 'file' },
+    { nombre: 'En diseño', desc: 'Arte y montaje DTF', icon: 'pencil' },
+    { nombre: 'Para impresión', desc: 'En cola de plóter', icon: 'printer' },
+    { nombre: 'Producción', desc: 'Estampado y plancha', icon: 'flame' },
+    { nombre: 'Listo para entrega', desc: 'Empacado con etiqueta Maka', icon: 'package', final: true },
+  ];
+  const sinEtapa = pedidosActivos.filter((p) => !p.etapa);
+
+  const kpi = (label, icon, value, sub, cls = '') => `
+    <div class="kpi ${cls}">
+      <div class="kpi-top"><div class="kpi-label">${label}</div><div class="kpi-icon">${icon_(icon)}</div></div>
+      <div class="kpi-value">${value}</div>
+      <div class="kpi-sub">${sub}</div>
+    </div>`;
+
+  const stageCard = (tag, nombre, desc, iconName, n, extra = '') => `
+    <div class="stage ${n > 0 ? 'has' : ''} ${extra}" data-go="pedidos">
+      <div class="stage-top"><span class="stage-tag">${tag}</span><span class="stage-icon">${icon_(iconName)}</span></div>
+      <div class="stage-name">${nombre}</div>
+      <div class="stage-desc">${desc}</div>
+      <div class="stage-count">${n}</div>
+    </div>`;
+
+  const cortes = [...new Set(productos.map((p) => p.corte).filter(Boolean))];
+  const ordenTallas = TALLAS_OPCIONES.flatMap((g) => g.valores);
+  const tallas = [...new Set(productos.map((p) => p.talla).filter(Boolean))].sort(
+    (a, b) => ordenTallas.indexOf(a) - ordenTallas.indexOf(b)
+  );
+  const chipValores = [...cortes, ...tallas];
+
+  const enStock = productos.filter((p) => Number(p.stock) > 0).length;
 
   content.innerHTML = `
     <h2>Resumen</h2>
-    <div class="stat-row">
-      <div class="stat"><div class="label">Productos (SKUs)</div><div class="value">${(productos || []).length}</div></div>
-      <div class="stat"><div class="label">Unidades en stock</div><div class="value">${fmt(stockTotalProductos)}</div></div>
-      <div class="stat"><div class="label">Materiales (SKUs)</div><div class="value">${(materiales || []).length}</div></div>
-      <div class="stat"><div class="label">Con stock bajo (≤3)</div><div class="value">${bajoStock.length}</div></div>
-      <div class="stat"><div class="label">Pedidos activos</div><div class="value">${pedidosActivos.length}</div></div>
-      <div class="stat"><div class="label">Listos para entrega</div><div class="value">${pedidosListos.length}</div></div>
+
+    <div class="kpi-grid">
+      ${kpi('Productos (SKUs)', 'shirt', productos.length, 'Catálogo registrado')}
+      ${kpi('Unidades en stock', 'layers', fmt(unidades), '<span style="color:var(--ok);">Disponibles hoy</span>')}
+      ${kpi('Materiales (SKUs)', 'file', materiales.length, 'Insumos y estampado')}
+      ${kpi('Con stock bajo (≤3)', 'alert', bajoStock.length, `${agotados.length} agotados · ${bajoStock.length - agotados.length} con 1–3 ud.`, bajoStock.length ? 'danger' : '')}
+      ${kpi('Pedidos activos', 'flame', pedidosActivos.length, 'En flujo de taller', 'warm')}
+      ${kpi('Listos para entrega', 'package', listos.length, 'Para despachar', listos.length ? 'good' : '')}
     </div>
 
     <div class="card">
-      <h3>Pedidos activos por etapa</h3>
-      <table>
-        <tr><th>Etapa</th><th>Pedidos</th></tr>
-        ${conteoEtapas.map((c) => `<tr><td>${c.etapa}</td><td>${c.n}</td></tr>`).join('')}
-        <tr><td style="color:var(--muted);">Sin etapa asignada</td><td>${sinEtapa}</td></tr>
-      </table>
+      <div class="section-head">
+        <div class="section-title">
+          <div><h3>Pedidos activos por etapa</h3><p>Seguimiento del flujo de diseño, impresión DTF y confección</p></div>
+        </div>
+        <div class="seg" id="etapas-toggle">
+          <button class="plain on" data-mode="flujo">Flujo visual</button>
+          <button class="plain" data-mode="tabla">Tabla</button>
+        </div>
+      </div>
+
+      <div id="etapas-flujo" class="stage-grid">
+        ${ETAPAS_INFO.map((e, i) =>
+          stageCard(`ETAPA ${i + 1}`, e.nombre, e.desc, e.icon, pedidosActivos.filter((p) => p.etapa === e.nombre).length, e.final ? 'final' : '')
+        ).join('')}
+        ${stageCard('SIN ASIGNAR', 'Sin etapa asignada', 'Por clasificar', 'help', sinEtapa.length, 'none')}
+      </div>
+
+      <div id="etapas-tabla" style="display:none;">
+        <table>
+          <tr><th>Pedido</th><th>Fecha</th><th>Cliente</th><th>Estado</th><th>Etapa</th></tr>
+          ${pedidosActivos
+            .map(
+              (p) =>
+                `<tr class="filtrable"><td><span class="code-chip">${p.codigo}</span></td><td>${p.fecha}</td><td>${p.cliente_id || '-'}</td><td>${p.estado}</td><td>${p.etapa || '<span style="color:var(--muted);">Sin etapa</span>'}</td></tr>`
+            )
+            .join('') || '<tr><td colspan="5" style="color:var(--muted);">No hay pedidos activos.</td></tr>'}
+        </table>
+      </div>
     </div>
 
-    <div class="card">
-      <h3>Stock de producto terminado</h3>
-      <table>
-        <tr><th>Código</th><th>Nombre</th><th>Stock</th></tr>
-        ${(productos || [])
-          .map((p) => `<tr><td>${p.codigo}</td><td>${p.nombre}</td><td>${fmt(p.stock)}</td></tr>`)
-          .join('')}
-      </table>
-    </div>
+    <div class="resumen-cols">
+      <div class="card">
+        <div class="section-head">
+          <div class="section-title">
+            <div><h3>Stock de producto terminado <span class="pill" style="margin-left:6px;">${productos.length} SKUs</span></h3><p>Prendas estampadas listas para venta inmediata</p></div>
+          </div>
+          <button class="btn btn-outline" id="ir-productos">${icon_('plus', 'sm')} Añadir producto</button>
+        </div>
 
-    <div class="card">
-      <h3>Últimas ventas</h3>
-      <table>
-        <tr><th>Factura</th><th>Fecha</th><th>Cliente</th><th>Total</th><th>Moneda</th></tr>
-        ${(ventasRecientes || [])
-          .map(
-            (v) =>
-              `<tr><td>#${v.numero_factura}</td><td>${v.fecha}</td><td>${v.cliente_id || '-'}</td><td>${fmt(v.gran_total)}</td><td>${v.moneda_pago}</td></tr>`
-          )
-          .join('')}
-      </table>
+        <div class="seg" id="stock-tabs" style="margin-bottom:14px;">
+          <button class="plain on-accent" data-tab="todos">Todos <span class="n">(${productos.length})</span></button>
+          <button class="plain" data-tab="en">En stock <span class="n">(${enStock})</span></button>
+          <button class="plain" data-tab="agotados">Agotados <span class="n">(${agotados.length})</span></button>
+        </div>
+
+        ${chipValores.length ? `
+        <div class="chips" id="stock-chips">
+          <span class="chips-label">Corte/Talla:</span>
+          <button class="plain on" data-chip="">Todos</button>
+          ${chipValores.map((v) => `<button class="plain" data-chip="${v}">${v}</button>`).join('')}
+        </div>` : ''}
+
+        <table id="stock-table">
+          <tr><th>Código</th><th>Nombre de prenda</th><th>Corte / talla</th><th>Stock</th></tr>
+        </table>
+      </div>
+
+      <div>
+        <div class="card">
+          <div class="section-head" style="margin-bottom:6px;">
+            <div class="section-title"><div><h3>Últimas ventas</h3><p>Historial de facturación reciente</p></div></div>
+            <button class="btn btn-outline" id="ir-ventas">${icon_('plus', 'sm')} Nueva venta</button>
+          </div>
+          ${ventasRecientes.length ? `
+          <table>
+            <tr><th>Factura</th><th>Fecha</th><th>Cliente</th><th>Total</th><th>Moneda</th></tr>
+            ${ventasRecientes
+              .map(
+                (v) =>
+                  `<tr><td><span class="code-chip">#${v.numero_factura}</span></td><td>${v.fecha}</td><td>${v.cliente_id || '-'}</td><td>${fmt(v.gran_total)}</td><td>${v.moneda_pago}</td></tr>`
+              )
+              .join('')}
+          </table>` : `
+          <div class="empty">
+            <div class="empty-icon">${icon_('bag')}</div>
+            <strong>Sin ventas registradas todavía</strong>
+            Registrá la primera venta o despachá el pedido listo para entrega.
+          </div>`}
+        </div>
+
+        <div class="card">
+          <div class="section-head" style="margin-bottom:0;">
+            <div class="section-title"><div><h3>Prioridad de reposición</h3><p>Productos agotados para mandar a producir</p></div></div>
+            ${agotados.length ? `<div class="count-flag">${agotados.length}<br/>AGOTADOS</div>` : ''}
+          </div>
+          ${agotados.length ? `
+          <div class="repo-list">
+            ${agotados
+              .slice(0, 8)
+              .map(
+                (p) =>
+                  `<div class="repo-item"><div class="repo-code">${p.codigo}${p.talla ? ` / ${p.talla}` : ''}</div><div class="repo-name">${p.nombre}</div></div>`
+              )
+              .join('')}
+          </div>
+          ${agotados.length > 8 ? `<p style="color:var(--muted);font-size:12px;margin:10px 0 0;">y ${agotados.length - 8} más…</p>` : ''}
+          <button class="btn btn-outline" id="ir-produccion" style="margin-top:14px;">Ir a producción</button>` : `
+          <div class="empty"><strong>Todo con stock</strong>No hay productos agotados.</div>`}
+        </div>
+      </div>
     </div>
   `;
+
+  // ---- navegación rápida ----
+  content.querySelectorAll('[data-go]').forEach((el) => el.addEventListener('click', () => goToView(el.dataset.go)));
+  const on = (id, view) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('click', () => goToView(view));
+  };
+  on('ir-productos', 'productos');
+  on('ir-ventas', 'ventas');
+  on('ir-produccion', 'produccion');
+
+  // ---- etapas: flujo visual / tabla ----
+  document.querySelectorAll('#etapas-toggle button').forEach((b) =>
+    b.addEventListener('click', () => {
+      document.querySelectorAll('#etapas-toggle button').forEach((x) => x.classList.toggle('on', x === b));
+      const tabla = b.dataset.mode === 'tabla';
+      document.getElementById('etapas-flujo').style.display = tabla ? 'none' : '';
+      document.getElementById('etapas-tabla').style.display = tabla ? '' : 'none';
+    })
+  );
+
+  // ---- stock: pestañas y filtro por corte/talla ----
+  let tab = 'todos';
+  let chip = '';
+  const stockTable = document.getElementById('stock-table');
+
+  function pintarStock() {
+    const lista = productos.filter((p) => {
+      const n = Number(p.stock);
+      if (tab === 'en' && !(n > 0)) return false;
+      if (tab === 'agotados' && !(n <= 0)) return false;
+      if (chip && p.corte !== chip && p.talla !== chip) return false;
+      return true;
+    });
+    const filas = lista
+      .map((p) => {
+        const n = Number(p.stock);
+        const cls = n <= 0 ? 'out' : n <= 3 ? 'low' : '';
+        const corteCls = p.corte === 'Oversize' ? 'oversize' : p.corte === 'Slim fit' ? 'slim' : '';
+        return `<tr class="filtrable">
+          <td><span class="code-chip">${p.codigo}</span></td>
+          <td style="font-weight:600;">${p.nombre}</td>
+          <td>${p.corte ? `<span class="pill ${corteCls}">${p.corte}</span>` : ''}${p.talla ? `<span class="code-chip">${p.talla}</span>` : p.corte ? '' : '-'}</td>
+          <td><span class="stock-dot ${cls}">${fmt(n)}</span></td>
+        </tr>`;
+      })
+      .join('');
+    stockTable.innerHTML =
+      '<tr><th>Código</th><th>Nombre de prenda</th><th>Corte / talla</th><th>Stock</th></tr>' +
+      (filas || '<tr><td colspan="4" style="color:var(--muted);">No hay productos con ese filtro.</td></tr>');
+  }
+
+  document.querySelectorAll('#stock-tabs button').forEach((b) =>
+    b.addEventListener('click', () => {
+      tab = b.dataset.tab;
+      document.querySelectorAll('#stock-tabs button').forEach((x) => x.classList.toggle('on-accent', x === b));
+      pintarStock();
+    })
+  );
+  document.querySelectorAll('#stock-chips button').forEach((b) =>
+    b.addEventListener('click', () => {
+      chip = b.dataset.chip;
+      document.querySelectorAll('#stock-chips button').forEach((x) => x.classList.toggle('on', x === b));
+      pintarStock();
+    })
+  );
+  pintarStock();
 }
 
 // ============================================================

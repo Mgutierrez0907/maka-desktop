@@ -110,7 +110,18 @@ repositorio) → bajar hasta **Danger Zone** → **Change visibility** →
   (Materia prima, Producción, Productos, Equipos, Diseños), **Compra y
   venta** (Compras, Ventas, Presupuestos, Pedidos, Clientes) y
   **Configuración**.
-- **Resumen**: stock de productos, cuáles están bajos, últimas ventas.
+- **Diseño (v0.4.0)**: tema oscuro con rojo del torii, barra superior con
+  título de la pantalla, filtro rápido de la lista actual (tecla `/`) y
+  botones de "Registrar venta" / "Nuevo pedido", y menú lateral con
+  contadores (productos, materia prima, equipos, pedidos activos). Las
+  tipografías (Inter, Oswald, JetBrains Mono) se cargan de Google Fonts;
+  sin internet se usan las del sistema. El mismo estilo aplica a la
+  versión web, con el menú en tira horizontal en el celular.
+- **Resumen**: tarjetas con productos, unidades, materiales, stock bajo,
+  pedidos activos y listos para entrega; pedidos por etapa (flujo visual o
+  tabla); stock de producto terminado con pestañas (todos / en stock /
+  agotados) y filtro por corte/talla; últimas ventas y prioridad de
+  reposición (productos agotados).
 - **Materia prima**: solo lectura de stock y costo — el alta es solo para
   dar de alta un material nuevo (código/nombre/unidad/categoría). El
   stock y el costo unitario (promedio ponderado) se actualizan únicamente
