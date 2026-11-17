@@ -12,8 +12,9 @@ Corre igual en Ubuntu y en Windows.
    (corte/talla en productos, acceso de ventas a Diseños, Pedidos y Pagos),
    `maka_schema_v3.sql` (módulo de Equipos y se quita el reset total del
    sistema), `maka_schema_v4.sql` (arregla el bucle al borrar un
-   presupuesto enlazado a un pedido), y por último `maka_schema_v5.sql`
-   (etapa de producción en Pedidos).
+   presupuesto enlazado a un pedido), `maka_schema_v5.sql`
+   (etapa de producción en Pedidos), y por último `maka_schema_v6.sql`
+   (etapa «Entregado» con fecha de entrega y notificaciones de la campana).
 2. Confirmá que tu usuario y el de María ya tienen fila en `perfiles` con
    su `rol` (`admin` / `ventas`).
 
@@ -215,3 +216,12 @@ mano ni tu laptop ni la PC de María.
   imprime o se guarda como PDF manualmente desde ahí).
 - Ícono propio para el instalador en vez del logo genérico (ya está
   configurado para usarlo, solo falta ajustarlo si se ve recortado).
+
+## Novedades de la v0.5.0
+
+- **Entregado**: nueva etapa final en Pedidos, con fecha de entrega. Al marcarla avisa si hay saldo pendiente o falta registrar la venta. En el Resumen hay un bloque «Listos para entregar».
+- **Campana de notificaciones** (arriba a la derecha): pedidos y presupuestos nuevos, y cambios de estado/etapa, con quién los hizo. Las genera la base de datos (triggers de `maka_schema_v6.sql`), así que funcionan desde escritorio, web y celular. Se actualiza cada 45 s.
+- **Novedades**: ventana con las notas de cada versión; se abre sola una vez por versión y desde el menú lateral.
+- Pedidos: filtros Activos / Entregados / Todos.
+
+Al publicar una versión nueva, cambiá `APP_VERSION` y el arreglo `NOVEDADES` en `src/app.js` junto con la versión de `package.json`, y corré `gen_docs` para regenerar `docs/`.

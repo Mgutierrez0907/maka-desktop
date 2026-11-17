@@ -61,6 +61,7 @@ document.getElementById('logout-btn').addEventListener('click', async () => {
   await supabase.auth.signOut();
   currentUser = null;
   currentPerfil = null;
+  detenerNotificaciones();
   appScreen.style.display = 'none';
   loginScreen.style.display = 'flex';
 });
@@ -103,6 +104,8 @@ async function afterLogin(user) {
   appScreen.style.display = 'grid';
 
   goToView('resumen');
+  iniciarNotificaciones();
+  setTimeout(revisarNovedades, 700);
 }
 
 // Restaurar sesión si ya había un login previo (persistSession)
@@ -171,6 +174,8 @@ const ICONS = {
   help: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
   plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
   bag: '<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/>',
+  check: '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4 12 14.01l-3-3"/>',
+  bell: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
 };
 
 function icon_(name, extra = '') {
@@ -208,13 +213,14 @@ async function refrescarBadges() {
     contar(supabase.from('productos').select('*', head).eq('activo', true)),
     contar(supabase.from('materia_prima').select('*', head).eq('activo', true)),
     contar(supabase.from('equipos').select('*', head).eq('activo', true)),
-    contar(supabase.from('pedidos').select('*', head).not('estado', 'in', '(completado,rechazado)')),
+    contar(supabase.from('pedidos').select('*', head).neq('estado', 'rechazado').or('etapa.is.null,etapa.neq.Entregado')),
   ]);
   const valores = { productos, materiaPrima: materia, equipos, pedidos };
   document.querySelectorAll('[data-badge]').forEach((el) => {
     const v = valores[el.dataset.badge];
     el.textContent = typeof v === 'number' && v > 0 ? String(v) : '';
   });
+  cargarNotificaciones();
 }
 
 // Filtro rápido de la barra superior: oculta las filas de la lista actual que no coinciden
@@ -244,12 +250,294 @@ document.addEventListener('keydown', (e) => {
 document.querySelectorAll('.nav-group-title').forEach((t) =>
   t.addEventListener('click', () => t.parentElement.classList.toggle('open'))
 );
+
+// ============================================================
+// Notificaciones (campana)
+// Las genera la base de datos con triggers (maka_schema_v6.sql)
+// ============================================================
+
+let notifs = [];
+let notifVistoHasta = new Date(0);
+let notifVistoPrevio = new Date(0);
+let notifError = false;
+let notifTimer = null;
+
+const NOTIF_ICONO = {
+  pedido_nuevo: 'package',
+  pedido_estado: 'check',
+  pedido_etapa: 'flame',
+  presupuesto_nuevo: 'file',
+  presupuesto_estado: 'pencil',
+};
+
+function tiempoRelativo(iso) {
+  const seg = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+  if (seg < 60) return 'hace un momento';
+  const min = Math.round(seg / 60);
+  if (min < 60) return `hace ${min} min`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `hace ${h} h`;
+  const d = Math.round(h / 24);
+  if (d < 7) return `hace ${d} d`;
+  return new Date(iso).toLocaleDateString('es-VE');
+}
+
+function noLeidas() {
+  return notifs.filter((n) => new Date(n.creado_en) > notifVistoHasta).length;
+}
+
+function pintarCampana() {
+  const badge = document.getElementById('bell-count');
+  const n = noLeidas();
+  badge.textContent = n > 99 ? '99+' : n > 0 ? String(n) : '';
+  badge.style.display = n > 0 ? '' : 'none';
+}
+
+function panelNotifAbierto() {
+  return document.getElementById('notif-panel').style.display !== 'none';
+}
+
+function pintarPanelNotif() {
+  const lista = document.getElementById('notif-list');
+  const sub = document.getElementById('notif-sub');
+  if (notifError) {
+    sub.textContent = '';
+    lista.innerHTML =
+      '<div class="empty"><strong>Notificaciones sin activar</strong>Falta correr <b>maka_schema_v6.sql</b> en Supabase.</div>';
+    return;
+  }
+  const nuevas = notifs.filter((n) => new Date(n.creado_en) > notifVistoPrevio).length;
+  sub.textContent = nuevas ? `${nuevas} nueva${nuevas === 1 ? '' : 's'}` : 'Todo al día';
+  lista.innerHTML = notifs.length
+    ? notifs
+        .map((n) => {
+          const nueva = new Date(n.creado_en) > notifVistoPrevio;
+          return `<div class="notif-item ${nueva ? 'nueva' : ''}" data-tipo="${esc(n.tipo)}">
+            <div class="notif-icon">${icon_(NOTIF_ICONO[n.tipo] || 'bell')}</div>
+            <div class="notif-body">
+              <div class="notif-title">${esc(n.titulo)}</div>
+              ${n.detalle ? `<div class="notif-detail">${esc(n.detalle)}</div>` : ''}
+              <div class="notif-meta">${n.autor_nombre ? `por ${esc(n.autor_nombre)} · ` : ''}${tiempoRelativo(n.creado_en)}</div>
+            </div>
+            ${nueva ? '<span class="notif-dot"></span>' : ''}
+          </div>`;
+        })
+        .join('')
+    : '<div class="empty"><div class="empty-icon">' + icon_('bell') + '</div><strong>Sin notificaciones</strong>Acá vas a ver los pedidos y presupuestos nuevos y sus cambios de estado.</div>';
+
+  lista.querySelectorAll('.notif-item').forEach((el) =>
+    el.addEventListener('click', () => {
+      cerrarPanelNotif();
+      goToView(el.dataset.tipo.startsWith('presupuesto') ? 'presupuestos' : 'pedidos');
+    })
+  );
+}
+
+async function cargarNotificaciones() {
+  if (!currentPerfil) return;
+  const { data, error } = await supabase
+    .from('notificaciones')
+    .select('*')
+    .order('creado_en', { ascending: false })
+    .limit(40);
+  if (error) {
+    notifError = true;
+    notifs = [];
+    pintarCampana();
+    if (panelNotifAbierto()) pintarPanelNotif();
+    return;
+  }
+  notifError = false;
+  notifs = data || [];
+  const { data: est } = await supabase
+    .from('notificaciones_estado')
+    .select('visto_hasta')
+    .eq('user_id', currentPerfil.id)
+    .maybeSingle();
+  notifVistoHasta = est && est.visto_hasta ? new Date(est.visto_hasta) : new Date(0);
+  pintarCampana();
+  if (panelNotifAbierto()) pintarPanelNotif();
+}
+
+async function abrirPanelNotif() {
+  notifVistoPrevio = notifVistoHasta; // lo que era nuevo se sigue resaltando mientras el panel está abierto
+  document.getElementById('notif-panel').style.display = 'flex';
+  pintarPanelNotif();
+  if (!notifError && notifs.length && noLeidas() > 0) {
+    const hasta = notifs[0].creado_en;
+    const { error } = await supabase
+      .from('notificaciones_estado')
+      .upsert({ user_id: currentPerfil.id, visto_hasta: hasta });
+    if (!error) {
+      notifVistoHasta = new Date(hasta);
+      pintarCampana();
+    }
+  }
+}
+
+function cerrarPanelNotif() {
+  document.getElementById('notif-panel').style.display = 'none';
+}
+
+function iniciarNotificaciones() {
+  cargarNotificaciones();
+  if (!notifTimer) notifTimer = setInterval(cargarNotificaciones, 45000);
+}
+
+function detenerNotificaciones() {
+  if (notifTimer) clearInterval(notifTimer);
+  notifTimer = null;
+  notifs = [];
+  notifVistoHasta = new Date(0);
+  cerrarPanelNotif();
+  pintarCampana();
+}
+
+document.getElementById('bell-btn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (panelNotifAbierto()) cerrarPanelNotif();
+  else abrirPanelNotif();
+});
+document.getElementById('notif-panel').addEventListener('click', (e) => e.stopPropagation());
+document.addEventListener('click', () => {
+  if (panelNotifAbierto()) cerrarPanelNotif();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    cerrarPanelNotif();
+    cerrarNovedades();
+  }
+});
+
+// ============================================================
+// Novedades de la versión
+// (al publicar una versión nueva: subir APP_VERSION —igual que "version" en
+// package.json— y agregar su bloque arriba de NOVEDADES)
+// ============================================================
+
+const APP_VERSION = '0.5.0';
+
+const NOVEDADES = [
+  {
+    version: '0.5.0',
+    fecha: '17 nov 2026',
+    titulo: 'Entregas, notificaciones y novedades',
+    items: [
+      ['Nuevo', 'Etapa final <b>Entregado</b> en Pedidos, con fecha de entrega. Al marcarla avisa si queda saldo por cobrar o si falta registrar la venta.'],
+      ['Nuevo', 'En el Resumen, bloque <b>Listos para entregar</b> con botón “Marcar entregado” y tarjeta de Entregado en el flujo.'],
+      ['Nuevo', '<b>Campana de notificaciones</b>: avisa cuando se crea un pedido o un presupuesto y cuando cambia su estado o etapa, con quién lo hizo.'],
+      ['Nuevo', 'Esta ventana de novedades: aparece una vez por versión y se abre cuando quieras desde el menú.'],
+      ['Mejora', 'Pedidos tiene filtros <b>Activos / Entregados / Todos</b>. Los entregados ya no cuentan como activos ni en el contador del menú.'],
+      ['Arreglo', 'La etapa de un pedido ya vendido se puede cambiar (antes quedaba bloqueada y no se podía llegar a Entregado).'],
+    ],
+  },
+  {
+    version: '0.4.0',
+    fecha: '31 oct 2026',
+    titulo: 'Rediseño',
+    items: [
+      ['Nuevo', 'Tema oscuro con rojo del torii, barra superior con filtro rápido (tecla /) y accesos a “Registrar venta” y “Nuevo pedido”.'],
+      ['Nuevo', 'Resumen renovado: tarjetas, pedidos por etapa, stock con filtros por corte y talla, últimas ventas y reposición.'],
+      ['Mejora', 'Menú con contadores y adaptado al celular en la versión web.'],
+    ],
+  },
+  {
+    version: '0.3.x',
+    fecha: 'oct 2026',
+    titulo: 'Pedidos más completos',
+    items: [
+      ['Nuevo', 'Etapas de producción en cada pedido y columna “Pagado” sin abrir el panel de Pagos.'],
+      ['Nuevo', 'Vincular un presupuesto que ya existía a un pedido (y desvincularlo).'],
+      ['Arreglo', 'Los pagos en VES ahora se convierten a USD con la tasa con la que se registraron.'],
+    ],
+  },
+  {
+    version: '0.2.x',
+    fecha: 'oct 2026',
+    titulo: 'Base del sistema',
+    items: [
+      ['Nuevo', 'Módulo de Equipos, menú agrupado por carpetas, versión web para el celular y actualizaciones automáticas.'],
+      ['Nuevo', 'Pedidos y pagos (50% inicial), corte y talla en productos, acceso de María a Diseños.'],
+      ['Arreglo', 'Se pueden borrar presupuestos y pedidos enlazados sin que se bloqueen entre sí.'],
+    ],
+  },
+];
+
+function cerrarNovedades() {
+  const m = document.getElementById('novedades-modal');
+  if (m) m.remove();
+  try {
+    localStorage.setItem('maka_novedades_visto', APP_VERSION);
+  } catch (e) {
+    /* sin almacenamiento disponible: simplemente se mostrará de nuevo */
+  }
+}
+
+function abrirNovedades() {
+  if (document.getElementById('novedades-modal')) return;
+  const tagCls = { Nuevo: 'tag-nuevo', Mejora: 'tag-mejora', Arreglo: 'tag-arreglo' };
+  const bloque = (r, abierto) => `
+    <details class="rel" ${abierto ? 'open' : ''}>
+      <summary><span class="rel-ver">v${r.version}</span><span class="rel-tit">${r.titulo}</span><span class="rel-fecha">${r.fecha}</span></summary>
+      <ul>${r.items.map(([tag, txt]) => `<li><span class="rel-tag ${tagCls[tag] || ''}">${tag}</span><span>${txt}</span></li>`).join('')}</ul>
+    </details>`;
+  const modal = document.createElement('div');
+  modal.id = 'novedades-modal';
+  modal.className = 'modal-backdrop';
+  modal.innerHTML = `
+    <div class="modal" role="dialog" aria-label="Novedades">
+      <div class="modal-head">
+        <div><h3>Novedades</h3><p>Versión instalada: v${APP_VERSION}</p></div>
+        <button class="plain modal-x" id="novedades-x" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="modal-body">${NOVEDADES.map((r, i) => bloque(r, i === 0)).join('')}</div>
+      <div class="modal-foot"><button class="btn btn-primary" id="novedades-ok">Entendido</button></div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) cerrarNovedades();
+  });
+  document.getElementById('novedades-x').addEventListener('click', cerrarNovedades);
+  document.getElementById('novedades-ok').addEventListener('click', cerrarNovedades);
+}
+
+function revisarNovedades() {
+  let visto = null;
+  try {
+    visto = localStorage.getItem('maka_novedades_visto');
+  } catch (e) {
+    /* ignorar */
+  }
+  if (visto !== APP_VERSION) abrirNovedades();
+}
+
+document.getElementById('open-novedades').addEventListener('click', abrirNovedades);
+document.getElementById('app-version').textContent = APP_VERSION;
+
 document.getElementById('quick-venta').addEventListener('click', () => goToView('ventas'));
 document.getElementById('quick-pedido').addEventListener('click', () => goToView('pedidos'));
 
 // Etapas de producción de un pedido (independiente del estado comercial
 // pendiente/aprobado/etc., que sigue al presupuesto y a la venta).
-const ETAPAS_PEDIDO = ['Presupuestado', 'En diseño', 'Para impresión', 'Producción', 'Listo para entrega'];
+const ETAPAS_PEDIDO = ['Presupuestado', 'En diseño', 'Para impresión', 'Producción', 'Listo para entrega', 'Entregado'];
+
+// Un pedido está "cerrado" cuando se entregó o se rechazó; el resto sigue en el flujo del taller
+// (incluido uno ya vendido que todavía no se entregó).
+function esPedidoCerrado(p) {
+  return p.estado === 'rechazado' || p.etapa === 'Entregado';
+}
+
+// Fecha de hoy en hora local (YYYY-MM-DD), sin saltar de día por la zona horaria
+function hoyLocal() {
+  const d = new Date();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${mm}-${dd}`;
+}
+
+function esc(t) {
+  return String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
 
 // Un pago expresado en USD: los pagos en VES se convierten con la tasa
 // BCV con la que se registraron.
@@ -262,6 +550,47 @@ function pagoEnUsd(p) {
   return monto;
 }
 
+// Pagado (USD) y total del presupuesto de cada pedido: { codigo: { pagadoUsd, totalUsd } }
+async function infoPagosPedidos(pedidos) {
+  const out = {};
+  if (!pedidos.length) return out;
+  const presuIds = pedidos.map((p) => p.presupuesto_id).filter(Boolean);
+  const [pg, pr] = await Promise.all([
+    supabase
+      .from('pagos')
+      .select('pedido_codigo,monto,moneda,tasa_cambio_bcv_aplicada')
+      .in('pedido_codigo', pedidos.map((p) => p.codigo)),
+    presuIds.length
+      ? supabase.from('presupuestos').select('id,total_estimado').in('id', presuIds)
+      : Promise.resolve({ data: [] }),
+  ]);
+  pedidos.forEach((p) => {
+    const pagado = (pg.data || []).filter((x) => x.pedido_codigo === p.codigo).reduce((a, x) => a + pagoEnUsd(x), 0);
+    const presu = (pr.data || []).find((x) => x.id === p.presupuesto_id);
+    out[p.codigo] = { pagadoUsd: pagado, totalUsd: presu ? Number(presu.total_estimado) : null };
+  });
+  return out;
+}
+
+// Antes de marcar un pedido como entregado: avisa si falta cobrar o registrar la venta
+function confirmarEntrega({ codigo, estado, pagadoUsd, totalUsd }) {
+  const avisos = [];
+  if (estado !== 'completado') {
+    avisos.push('• Todavía no registraste la venta de este pedido, así que el stock no se descontó.');
+  }
+  if (totalUsd != null && pagadoUsd < totalUsd - 0.009) {
+    avisos.push(`• Tiene un saldo pendiente de ${fmt(totalUsd - pagadoUsd)} USD.`);
+  }
+  const msg = avisos.length
+    ? `El pedido ${codigo} todavía tiene pendientes:\n\n${avisos.join('\n')}\n\n¿Marcarlo como entregado de todas formas?`
+    : `¿Marcar el pedido ${codigo} como entregado?`;
+  return confirm(msg);
+}
+
+function marcarEntregado(codigo) {
+  return supabase.from('pedidos').update({ etapa: 'Entregado', fecha_entrega: hoyLocal() }).eq('codigo', codigo);
+}
+
 // ============================================================
 // Resumen
 // ============================================================
@@ -270,7 +599,7 @@ async function viewResumen() {
   const [prodRes, matRes, pedRes, ventasRes] = await Promise.all([
     supabase.from('productos').select('codigo,nombre,stock,corte,talla,activo').order('codigo'),
     supabase.from('materia_prima').select('codigo,stock,activo'),
-    supabase.from('pedidos').select('codigo,fecha,cliente_id,estado,etapa').order('fecha', { ascending: false }),
+    supabase.from('pedidos').select('*').order('fecha', { ascending: false }),
     supabase
       .from('ventas')
       .select('numero_factura,fecha,gran_total,moneda_pago,cliente_id')
@@ -278,17 +607,13 @@ async function viewResumen() {
       .limit(6),
   ]);
 
-  // si todavía no se corrió maka_schema_v5.sql, la columna "etapa" no existe: se sigue sin ella
-  let pedidosData = pedRes.data;
-  if (pedRes.error) {
-    const r = await supabase.from('pedidos').select('codigo,fecha,cliente_id,estado').order('fecha', { ascending: false });
-    pedidosData = r.data;
-  }
+  const pedidosData = pedRes.data || [];
 
   const productos = (prodRes.data || []).filter((p) => p.activo !== false);
   const materiales = (matRes.data || []).filter((m) => m.activo !== false);
   const ventasRecientes = ventasRes.data || [];
-  const pedidosActivos = (pedidosData || []).filter((p) => !['completado', 'rechazado'].includes(p.estado));
+  const pedidosActivos = pedidosData.filter((p) => !esPedidoCerrado(p));
+  const entregados = pedidosData.filter((p) => p.etapa === 'Entregado');
 
   const unidades = productos.reduce((a, p) => a + Number(p.stock), 0);
   const agotados = productos.filter((p) => Number(p.stock) <= 0);
@@ -303,6 +628,33 @@ async function viewResumen() {
     { nombre: 'Listo para entrega', desc: 'Empacado con etiqueta Maka', icon: 'package', final: true },
   ];
   const sinEtapa = pedidosActivos.filter((p) => !p.etapa);
+
+  // pagos y saldo de los pedidos listos, para avisar antes de entregar
+  const infoListos = await infoPagosPedidos(listos);
+  const listosHtml = listos.length
+    ? `<div class="listos-box">
+        <div class="listos-title">${icon_('package', 'sm')} Listos para entregar <span class="pill">${listos.length}</span></div>
+        ${listos
+          .map((p) => {
+            const inf = infoListos[p.codigo] || { pagadoUsd: 0, totalUsd: null };
+            const saldo = inf.totalUsd == null ? null : inf.totalUsd - inf.pagadoUsd;
+            const pago =
+              inf.totalUsd == null
+                ? '<span style="color:var(--muted);">Sin presupuesto</span>'
+                : saldo > 0.009
+                  ? `<span style="color:var(--warn);">Debe ${fmt(saldo)} USD</span>`
+                  : '<span style="color:var(--ok);">Pagado completo</span>';
+            return `<div class="listo-row">
+              <span class="code-chip">${esc(p.codigo)}</span>
+              <span class="listo-cliente">${esc(p.cliente_id || 'Sin cliente')}</span>
+              <span class="listo-pago">${pago}</span>
+              ${p.estado !== 'completado' ? '<span class="badge" style="color:var(--warn);">Venta sin registrar</span>' : ''}
+              <button class="btn btn-outline btn-sm marcar-entregado" data-codigo="${esc(p.codigo)}">${icon_('check', 'sm')} Marcar entregado</button>
+            </div>`;
+          })
+          .join('')}
+      </div>`
+    : '';
 
   const kpi = (label, icon, value, sub, cls = '') => `
     <div class="kpi ${cls}">
@@ -355,7 +707,8 @@ async function viewResumen() {
         ${ETAPAS_INFO.map((e, i) =>
           stageCard(`ETAPA ${i + 1}`, e.nombre, e.desc, e.icon, pedidosActivos.filter((p) => p.etapa === e.nombre).length, e.final ? 'final' : '')
         ).join('')}
-        ${stageCard('SIN ASIGNAR', 'Sin etapa asignada', 'Por clasificar', 'help', sinEtapa.length, 'none')}
+        ${stageCard('CERRADO', 'Entregado', 'Pedidos ya entregados', 'check', entregados.length, 'done')}
+        ${stageCard('SIN ETAPA', 'Sin etapa asignada', 'Por clasificar', 'help', sinEtapa.length, 'none')}
       </div>
 
       <div id="etapas-tabla" style="display:none;">
@@ -369,6 +722,8 @@ async function viewResumen() {
             .join('') || '<tr><td colspan="5" style="color:var(--muted);">No hay pedidos activos.</td></tr>'}
         </table>
       </div>
+
+      ${listosHtml}
     </div>
 
     <div class="resumen-cols">
@@ -453,6 +808,18 @@ async function viewResumen() {
   on('ir-productos', 'productos');
   on('ir-ventas', 'ventas');
   on('ir-produccion', 'produccion');
+
+  // ---- marcar entregado desde el Resumen ----
+  content.querySelectorAll('.marcar-entregado').forEach((b) =>
+    b.addEventListener('click', async () => {
+      const p = listos.find((x) => x.codigo === b.dataset.codigo);
+      const inf = infoListos[p.codigo] || { pagadoUsd: 0, totalUsd: null };
+      if (!confirmarEntrega({ codigo: p.codigo, estado: p.estado, ...inf })) return;
+      const { error } = await marcarEntregado(p.codigo);
+      if (error) alert('No se pudo marcar como entregado: ' + error.message + '\n\n¿Corriste maka_schema_v6.sql en Supabase?');
+      else goToView('resumen');
+    })
+  );
 
   // ---- etapas: flujo visual / tabla ----
   document.querySelectorAll('#etapas-toggle button').forEach((b) =>
@@ -2182,9 +2549,9 @@ async function viewPedidos() {
   let clientes = (await supabase.from('clientes').select('id,nombre')).data || [];
   const { data: pedidos } = await supabase
     .from('pedidos')
-    .select('codigo,fecha,cliente_id,estado,etapa,presupuesto_id,venta_id,notas')
+    .select('*')
     .order('fecha', { ascending: false })
-    .limit(30);
+    .limit(60);
 
   const { data: pagosPedidos } = (pedidos || []).length
     ? await supabase
@@ -2287,6 +2654,12 @@ async function viewPedidos() {
       <div id="pedido-msg" class="msg"></div>
     </div>
 
+    <div class="seg" id="pedidos-filtro" style="margin:2px 0 6px;">
+      <button class="plain on-accent" data-f="activos">Activos <span class="n">(${(pedidos || []).filter((p) => !esPedidoCerrado(p)).length})</span></button>
+      <button class="plain" data-f="entregados">Entregados <span class="n">(${(pedidos || []).filter((p) => p.etapa === 'Entregado').length})</span></button>
+      <button class="plain" data-f="todos">Todos <span class="n">(${(pedidos || []).length})</span></button>
+    </div>
+
     <table>
       <tr><th>Pedido</th><th>Fecha</th><th>Cliente</th><th>Estado</th><th>Etapa</th><th>Presupuesto</th><th>Pagado</th><th>Venta</th><th>Notas</th><th></th></tr>
       ${(pedidos || [])
@@ -2296,16 +2669,17 @@ async function viewPedidos() {
           const puedeArmarPresupuesto = ['pendiente', 'ajustado', 'rechazado'].includes(p.estado);
           const puedeRegistrarVenta = p.estado === 'aprobado';
           return `
-            <tr data-codigo="${p.codigo}">
+            <tr data-codigo="${p.codigo}" class="pedido-row" data-cerrado="${esPedidoCerrado(p) ? 1 : 0}" data-entregado="${p.etapa === 'Entregado' ? 1 : 0}">
               <td>${p.codigo}</td>
               <td>${p.fecha}</td>
               <td>${p.cliente_id || '-'}</td>
               <td><span class="badge" style="color:${ESTADO_COLOR[p.estado] || 'var(--muted)'};">${ESTADO_LABEL[p.estado] || p.estado}</span></td>
               <td>
-                <select class="etapa-select" data-codigo="${p.codigo}" ${p.estado === 'completado' ? 'disabled' : ''}>
+                <select class="etapa-select" data-codigo="${p.codigo}">
                   <option value="">(sin etapa)</option>
                   ${ETAPAS_PEDIDO.map((et) => `<option value="${et}" ${p.etapa === et ? 'selected' : ''}>${et}</option>`).join('')}
                 </select>
+                ${p.etapa === 'Entregado' && p.fecha_entrega ? `<div style="color:var(--muted);font-size:11px;margin-top:4px;">Entregado el ${p.fecha_entrega}</div>` : ''}
               </td>
               <td>${presu ? `${fmt(presu.total_estimado)} ${presu.moneda}` : '-'}</td>
               <td data-pagado-cell="${p.codigo}">${pagadoCellHtml(pagadoUsdPedido(p.codigo), presu ? Number(presu.total_estimado) : null, p.estado)}</td>
@@ -2396,16 +2770,47 @@ async function viewPedidos() {
   // ---- etapa del pedido ----
   content.querySelectorAll('.etapa-select').forEach((sel) => {
     sel.addEventListener('change', async () => {
+      const codigo = sel.dataset.codigo;
+      const valor = sel.value || null;
+      const p = pedidos.find((x) => x.codigo === codigo);
+      if (valor === 'Entregado') {
+        const info = (await infoPagosPedidos([p]))[codigo];
+        if (!confirmarEntrega({ codigo, estado: p.estado, ...info })) {
+          goToView('pedidos');
+          return;
+        }
+      }
       const { error } = await supabase
         .from('pedidos')
-        .update({ etapa: sel.value || null })
-        .eq('codigo', sel.dataset.codigo);
+        .update({ etapa: valor, fecha_entrega: valor === 'Entregado' ? hoyLocal() : null })
+        .eq('codigo', codigo);
       if (error) {
-        alert('No se pudo cambiar la etapa: ' + error.message);
+        alert('No se pudo cambiar la etapa: ' + error.message + (valor === 'Entregado' ? '\n\n¿Corriste maka_schema_v6.sql en Supabase?' : ''));
         goToView('pedidos');
+      } else if (valor === 'Entregado' || p.etapa === 'Entregado') {
+        goToView('pedidos'); // cambia de lista (activos / entregados)
       }
     });
   });
+
+  // ---- filtro Activos / Entregados / Todos ----
+  function filtrarPedidos(f) {
+    content.querySelectorAll('tr.pedido-row').forEach((tr) => {
+      const mostrar = f === 'todos' || (f === 'activos' && tr.dataset.cerrado === '0') || (f === 'entregados' && tr.dataset.entregado === '1');
+      let fila = tr;
+      for (let i = 0; i < 3 && fila; i++) {
+        fila.classList.toggle('row-hidden', !mostrar);
+        fila = fila.nextElementSibling;
+      }
+    });
+  }
+  document.querySelectorAll('#pedidos-filtro button').forEach((b) =>
+    b.addEventListener('click', () => {
+      document.querySelectorAll('#pedidos-filtro button').forEach((x) => x.classList.toggle('on-accent', x === b));
+      filtrarPedidos(b.dataset.f);
+    })
+  );
+  filtrarPedidos('activos');
 
   // ---- vincular un presupuesto que ya existía (creado antes del módulo Pedidos) ----
   const ESTADO_PEDIDO_DESDE_PRESUPUESTO = {

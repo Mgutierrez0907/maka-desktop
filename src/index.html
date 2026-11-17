@@ -83,6 +83,9 @@
             <div class="sesion">Sesión activa</div>
           </div>
         </div>
+        <button class="version-link" id="open-novedades" title="Ver las novedades de esta versión">
+          <span>Maka ERP v<span id="app-version"></span></span><span class="vl-nov">Novedades</span>
+        </button>
         <button id="logout-btn">
           <svg class="icon sm" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>
           Cerrar sesión
@@ -110,6 +113,16 @@
             <svg class="icon sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8"/><path d="M8 12h8"/></svg>
             Nuevo pedido
           </button>
+          <div class="bell-wrap">
+            <button class="icon-btn" id="bell-btn" aria-label="Notificaciones" title="Notificaciones">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+              <span class="bell-count" id="bell-count" style="display:none;"></span>
+            </button>
+            <div class="notif-panel" id="notif-panel" style="display:none;">
+              <div class="notif-head"><strong>Notificaciones</strong><span id="notif-sub"></span></div>
+              <div id="notif-list"></div>
+            </div>
+          </div>
         </div>
       </div>
       <div id="content"></div>
